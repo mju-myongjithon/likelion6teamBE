@@ -1,8 +1,10 @@
 package com.mju.mjuton.global;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -22,5 +24,14 @@ public class ApiExceptionHandler {
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse("INVALID_REQUEST", message));
 	}
 
-	public record ErrorResponse(String code, String message) {}
+	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+	ResponseEntity<ErrorResponse> handle(HttpRequestMethodNotSupportedException exception) {
+		return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+				.body(new ErrorResponse("METHOD_NOT_ALLOWED", "지원하지 않는 HTTP 메서드입니다."));
+	}
+
+	@Schema(name = "ErrorResponse", description = "공통 API 오류 응답")
+	public record ErrorResponse(
+			@Schema(description = "프로그램에서 분기할 오류 코드", example = "INVALID_REQUEST") String code,
+			@Schema(description = "사용자에게 표시할 수 있는 오류 설명", example = "요청값이 올바르지 않습니다.") String message) {}
 }
