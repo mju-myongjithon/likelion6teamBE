@@ -15,31 +15,23 @@ import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class ProfileService {
 	private final ProfileRepository profiles;
 	private final TagRepository tags;
 	private final UserRepository users;
-	private final TransactionTemplate transactionTemplate;
+	private final ProfileWriteLock profileWriteLock;
 
 	public ProfileService(ProfileRepository profiles, TagRepository tags, UserRepository users,
-			PlatformTransactionManager transactionManager) {
+			ProfileWriteLock profileWriteLock) {
 		this.profiles = profiles;
 		this.tags = tags;
 		this.users = users;
-		this.transactionTemplate = new TransactionTemplate(transactionManager);
+		this.profileWriteLock = profileWriteLock;
 	}
 
-	public synchronized Profile create(long userId, ProfileValues values) {
-		return transactionTemplate.execute(status -> createInTransaction(userId, values));
-	}
-
-	private Profile createInTransaction(long userId, ProfileValues values) {
-		if (profiles.existsById(userId)) throw profileAlreadyExists();
-		User user = users.findById(userId).orElseThrow(ProfileService::authenticationRequired);
+	public Profile createForSignup(User user, ProfileValues values) {
 		NormalizedValues normalized = normalize(values);
 		Profile profile = new Profile(user, normalized.name(), normalized.schoolName(),
 				normalized.departmentName(), normalized.residenceArea(), normalized.bio(), normalized.avatarUrl());
@@ -53,8 +45,8 @@ public class ProfileService {
 		return profiles.findById(userId).orElseThrow(ProfileService::profileNotFound);
 	}
 
-	public synchronized Profile update(long userId, ProfileValues values) {
-		return transactionTemplate.execute(status -> updateInTransaction(userId, values));
+	public Profile update(long userId, ProfileValues values) {
+		return profileWriteLock.execute(() -> updateInTransaction(userId, values));
 	}
 
 	private Profile updateInTransaction(long userId, ProfileValues values) {
@@ -134,10 +126,6 @@ public class ProfileService {
 
 	private static ApiException authenticationRequired() {
 		return new ApiException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
-	}
-
-	private static ApiException profileAlreadyExists() {
-		return new ApiException(HttpStatus.CONFLICT, "PROFILE_ALREADY_EXISTS", "프로필이 이미 존재합니다.");
 	}
 
 	private static ApiException profileNotFound() {

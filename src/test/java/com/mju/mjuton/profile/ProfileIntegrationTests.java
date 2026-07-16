@@ -14,6 +14,7 @@ import com.mju.mjuton.profile.domain.TagType;
 import com.mju.mjuton.profile.repository.ProfileRepository;
 import com.mju.mjuton.profile.repository.TagRepository;
 import com.mju.mjuton.profile.service.ProfileService;
+import com.mju.mjuton.profile.service.ProfileWriteLock;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -36,21 +37,19 @@ class ProfileIntegrationTests {
 	@Autowired ProfileRepository profiles;
 	@Autowired TagRepository tags;
 	@Autowired ProfileService profileService;
+	@Autowired ProfileWriteLock profileWriteLock;
 
 	@Test
 	void createReadAndUpdateProfile() throws Exception {
 		MockHttpSession session = sessionFor("profile-flow@mju.ac.kr");
-
-		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(request("  홍길동  ", "[백엔드,스프링]", "[스터디]", "[개발자]")))
-				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.name").value("홍길동"))
-				.andExpect(jsonPath("$.interests[0]").value("백엔드"))
-				.andExpect(jsonPath("$.grade").doesNotExist());
+		createProfile(session, "  홍길동  ", List.of("백엔드", "스프링"), List.of("스터디"), List.of("개발자"));
 
 		mvc.perform(get("/api/profile").session(session))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.departmentName").value("컴퓨터공학과"));
+				.andExpect(jsonPath("$.name").value("홍길동"))
+				.andExpect(jsonPath("$.departmentName").value("컴퓨터공학과"))
+				.andExpect(jsonPath("$.interests[0]").value("백엔드"))
+				.andExpect(jsonPath("$.grade").doesNotExist());
 
 		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
 				.content(request("김명지", "[안드로이드]", "[]", "[개발자,팀장]")))
@@ -81,28 +80,29 @@ class ProfileIntegrationTests {
 				.andExpect(jsonPath("$.code").value("PROFILE_NOT_FOUND"));
 
 		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(request("홍길동", "[]", "[]", "[]"))).andExpect(status().isCreated());
-		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
 				.content(request("홍길동", "[]", "[]", "[]")))
-				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.code").value("PROFILE_ALREADY_EXISTS"));
+				.andExpect(status().isMethodNotAllowed())
+				.andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"))
+				.andExpect(jsonPath("$.message").value("지원하지 않는 HTTP 메서드입니다."))
+				.andExpect(jsonPath("$.trace").doesNotExist());
 	}
 
 	@Test
 	void validatesRequiredFieldsAndNormalizedDuplicateTags() throws Exception {
 		MockHttpSession session = sessionFor("profile-validation@mju.ac.kr");
+		createProfile(session, "홍길동", List.of(), List.of(), List.of());
 
-		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
 				.content(request("   ", "[]", "[]", "[]")))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
 				.content(request("홍길동", "[백엔드, 백엔드 ]", "[]", "[]")))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
+		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"name\":\"홍길동\",\"schoolName\":\"명지대학교\","
 						+ "\"departmentName\":\"컴퓨터공학과\",\"residenceArea\":\"서울\","
 						+ "\"purposes\":[],\"roles\":[]}"))
@@ -112,9 +112,7 @@ class ProfileIntegrationTests {
 	@Test
 	void normalizesTagsByType() throws Exception {
 		MockHttpSession session = sessionFor("profile-tags@mju.ac.kr");
-		mvc.perform(post("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(request("홍길동", "[개발]", "[개발]", "[]")))
-				.andExpect(status().isCreated());
+		createProfile(session, "홍길동", List.of("개발"), List.of("개발"), List.of());
 
 		assertThat(tags.findByTypeAndName(TagType.INTEREST, "개발")).isPresent();
 		assertThat(tags.findByTypeAndName(TagType.PURPOSE, "개발")).isPresent();
@@ -145,7 +143,8 @@ class ProfileIntegrationTests {
 	private void createAfter(CountDownLatch start, long userId, ProfileService.ProfileValues values) {
 		try {
 			start.await();
-			profileService.create(userId, values);
+			User user = users.findById(userId).orElseThrow();
+			profileWriteLock.execute(() -> profileService.createForSignup(user, values));
 		} catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(exception);
@@ -161,6 +160,15 @@ class ProfileIntegrationTests {
 
 	private User user(String email) {
 		return users.saveAndFlush(new User(email, new BCryptPasswordEncoder().encode("password123")));
+	}
+
+	private void createProfile(MockHttpSession session, String name, List<String> interests, List<String> purposes,
+			List<String> roles) {
+		long userId = (Long) session.getAttribute(AuthController.SESSION_USER_ID);
+		User user = users.findById(userId).orElseThrow();
+		ProfileService.ProfileValues values = new ProfileService.ProfileValues(name, "명지대학교", "컴퓨터공학과",
+				"서울", "백엔드 개발자", null, interests, purposes, roles);
+		profileWriteLock.execute(() -> profileService.createForSignup(user, values));
 	}
 
 	private String request(String name, String interests, String purposes, String roles) {

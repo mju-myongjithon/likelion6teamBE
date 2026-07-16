@@ -4,7 +4,12 @@ import com.mju.mjuton.auth.domain.EmailVerification;
 import com.mju.mjuton.auth.repository.EmailVerificationRepository;
 import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.auth.service.AuthService;
+import com.mju.mjuton.auth.service.SignupService;
 import com.mju.mjuton.auth.service.VerificationMailSender;
+import com.mju.mjuton.profile.repository.ProfileRepository;
+import com.mju.mjuton.profile.repository.TagRepository;
+import com.mju.mjuton.profile.domain.TagType;
+import com.mju.mjuton.profile.service.ProfileService;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -42,6 +47,9 @@ class AuthIntegrationTests {
 	@Autowired EmailVerificationRepository verifications;
 	@Autowired UserRepository users;
 	@Autowired AuthService authService;
+	@Autowired SignupService signupService;
+	@Autowired ProfileRepository profiles;
+	@Autowired TagRepository tags;
 	@Autowired Environment environment;
 
 	@Test
@@ -55,12 +63,12 @@ class AuthIntegrationTests {
 		String oldSessionId = original.getId();
 		MockHttpSession session = (MockHttpSession) mvc.perform(post("/api/auth/signup").session(original)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"student@mju.ac.kr\",\"verificationCode\":\"" + mailSender.code("student@mju.ac.kr")
-						+ "\",\"password\":\"password123\"}"))
+				.content(signupRequest("student@mju.ac.kr", mailSender.code("student@mju.ac.kr"), "password123")))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.email").value("student@mju.ac.kr"))
 				.andReturn().getRequest().getSession(false);
 		assertThat(session.getId()).isNotEqualTo(oldSessionId);
+		assertThat(profiles.findById(users.findByEmail("student@mju.ac.kr").orElseThrow().getId())).isPresent();
 
 		mvc.perform(get("/api/auth/session").session(session))
 				.andExpect(status().isOk())
@@ -77,8 +85,7 @@ class AuthIntegrationTests {
 		mvc.perform(post("/api/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"login@mju.ac.kr\"}"));
 		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"login@mju.ac.kr\",\"verificationCode\":\"" + mailSender.code("login@mju.ac.kr")
-						+ "\",\"password\":\"password123\"}"));
+				.content(signupRequest("login@mju.ac.kr", mailSender.code("login@mju.ac.kr"), "password123")));
 
 		mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"login@mju.ac.kr\",\"password\":\"wrong-pass\"}"))
@@ -100,19 +107,17 @@ class AuthIntegrationTests {
 		assertThat(verification.getCodeHash()).isNotEqualTo(code).startsWith("$2");
 
 		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"" + code
-						+ "\",\"password\":\"password123\"}"))
+				.content(signupRequest(email, code, "password123")))
 				.andExpect(status().isCreated());
 		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"" + code
-						+ "\",\"password\":\"password123\"}"))
+				.content(signupRequest(email, code, "password123")))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("EMAIL_ALREADY_REGISTERED"));
 
+		profiles.deleteById(users.findByEmail(email).orElseThrow().getId());
 		users.deleteAll(users.findByEmail(email).stream().toList());
 		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"" + code
-						+ "\",\"password\":\"password123\"}"))
+				.content(signupRequest(email, code, "password123")))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_VERIFICATION"));
 	}
@@ -175,7 +180,7 @@ class AuthIntegrationTests {
 	private String signupAfter(CountDownLatch start, String email, String code) throws InterruptedException {
 		start.await();
 		try {
-			authService.signup(email, code, "password123");
+			signupService.signup(email, code, "password123", profileValues("홍길동"));
 			return "CREATED";
 		} catch (ApiException exception) {
 			return exception.getCode();
@@ -206,15 +211,13 @@ class AuthIntegrationTests {
 				.andExpect(status().isCreated());
 
 		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"12345a\","
-						+ "\"password\":\"password123\"}"))
+				.content(signupRequest(email, "12345a", "password123")))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_VERIFICATION"));
 
 		String passwordOver72Bytes = "가".repeat(25);
 		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
-				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"" + mailSender.code(email)
-						+ "\",\"password\":\"" + passwordOver72Bytes + "\"}"))
+				.content(signupRequest(email, mailSender.code(email), passwordOver72Bytes)))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_PASSWORD"));
 	}
@@ -223,11 +226,62 @@ class AuthIntegrationTests {
 	void loginOver72BytesReturnsInvalidCredentials() throws Exception {
 		String email = "login-boundary@mju.ac.kr";
 		authService.sendVerification(email);
-		authService.signup(email, mailSender.code(email), "password123");
+		signupService.signup(email, mailSender.code(email), "password123", profileValues("홍길동"));
 		mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"" + email + "\",\"password\":\"" + "a".repeat(73) + "\"}"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+	}
+
+	@Test
+	void profileFailureRollsBackUserAndVerificationConsumption() throws Exception {
+		String email = "rollback@mju.ac.kr";
+		mvc.perform(post("/api/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isCreated());
+		String code = mailSender.code(email);
+
+		var failedSignup = mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+				.content(signupRequest(email, code, "password123")
+						.replace("\"name\":\"홍길동\"", "\"name\":\"   \"")
+						.replace("\"백엔드\"", "\"롤백전용태그\"")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+				.andReturn();
+		assertThat(users.findByEmail(email)).isEmpty();
+		assertThat(verifications.findFirstByEmailOrderByCreatedAtDesc(email).orElseThrow().getConsumedAt()).isNull();
+		assertThat(tags.findByTypeAndName(TagType.INTEREST, "롤백전용태그")).isEmpty();
+		assertThat(failedSignup.getRequest().getSession(false)).isNull();
+
+		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+				.content(signupRequest(email, code, "password123")))
+				.andExpect(status().isCreated());
+	}
+
+	@Test
+	void signupRequiresProfile() throws Exception {
+		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"missing-profile@mju.ac.kr\",\"verificationCode\":\"123456\","
+						+ "\"password\":\"password123\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+	}
+
+	private String signupRequest(String email, String code, String password) {
+		return "{\"email\":\"" + email + "\",\"verificationCode\":\"" + code + "\",\"password\":\""
+				+ password + "\",\"profile\":" + profileJson("홍길동") + "}";
+	}
+
+	private String profileJson(String name) {
+		return "{\"name\":\"" + name + "\",\"schoolName\":\"명지대학교\","
+				+ "\"departmentName\":\"컴퓨터공학과\",\"residenceArea\":\"서울\","
+				+ "\"bio\":\"백엔드 개발자\",\"avatarUrl\":null,\"interests\":[\"백엔드\"],"
+				+ "\"purposes\":[\"스터디\"],\"roles\":[\"개발자\"]}";
+	}
+
+	private ProfileService.ProfileValues profileValues(String name) {
+		return new ProfileService.ProfileValues(name, "명지대학교", "컴퓨터공학과", "서울", null, null,
+				java.util.List.of("백엔드"), java.util.List.of(), java.util.List.of());
 	}
 
 	@TestConfiguration

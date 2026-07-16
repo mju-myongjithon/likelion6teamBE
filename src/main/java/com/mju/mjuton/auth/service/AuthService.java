@@ -55,8 +55,7 @@ public class AuthService {
 		return code;
 	}
 
-	@Transactional
-	public User signup(String rawEmail, String code, String password) {
+	User createVerifiedUser(String rawEmail, String code, String password) {
 		String email = normalizeEmail(rawEmail);
 		validatePassword(password);
 		if (code == null || !code.matches("\\d{6}")) {
