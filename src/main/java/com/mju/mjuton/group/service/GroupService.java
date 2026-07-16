@@ -1,0 +1,161 @@
+package com.mju.mjuton.group.service;
+
+import com.mju.mjuton.auth.domain.User;
+import com.mju.mjuton.auth.repository.UserRepository;
+import com.mju.mjuton.global.ApiException;
+import com.mju.mjuton.group.domain.StudyGroup;
+import com.mju.mjuton.group.domain.StudyGroup.RoleValues;
+import com.mju.mjuton.group.repository.StudyGroupRepository;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class GroupService {
+	private final StudyGroupRepository groups;
+	private final UserRepository users;
+
+	public GroupService(StudyGroupRepository groups, UserRepository users) {
+		this.groups = groups;
+		this.users = users;
+	}
+
+	@Transactional
+	public GroupDetail create(long userId, GroupValues values) {
+		User leader = users.findById(userId).orElseThrow(GroupService::authenticationRequired);
+		NormalizedValues normalized = normalize(values);
+		StudyGroup group = new StudyGroup(leader, normalized.title(), normalized.description(),
+				normalized.maxMemberCount(), normalized.meetingRule(), normalized.location());
+		group.replaceRoles(normalized.recruitingRoles());
+		return GroupDetail.from(groups.saveAndFlush(group));
+	}
+
+	@Transactional(readOnly = true)
+	public List<GroupSummary> findAll() {
+		return groups.findAllByOrderByCreatedAtDescIdDesc().stream().map(GroupSummary::from).toList();
+	}
+
+	@Transactional(readOnly = true)
+	public GroupDetail find(long groupId) {
+		return GroupDetail.from(findGroup(groupId));
+	}
+
+	@Transactional
+	public GroupDetail update(long userId, long groupId, GroupValues values) {
+		ensureUserExists(userId);
+		StudyGroup group = findGroup(groupId);
+		ensureLeader(group, userId);
+		NormalizedValues normalized = normalize(values);
+		group.update(normalized.title(), normalized.description(), normalized.maxMemberCount(),
+				normalized.meetingRule(), normalized.location(), normalized.recruitingRoles());
+		return GroupDetail.from(groups.saveAndFlush(group));
+	}
+
+	@Transactional
+	public void delete(long userId, long groupId) {
+		ensureUserExists(userId);
+		StudyGroup group = findGroup(groupId);
+		ensureLeader(group, userId);
+		groups.delete(group);
+	}
+
+	private StudyGroup findGroup(long groupId) {
+		return groups.findWithRecruitingRolesById(groupId).orElseThrow(GroupService::groupNotFound);
+	}
+
+	private void ensureUserExists(long userId) {
+		if (!users.existsById(userId)) throw authenticationRequired();
+	}
+
+	private void ensureLeader(StudyGroup group, long userId) {
+		if (group.getLeaderUserId() != userId) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "GROUP_FORBIDDEN", "모임 리더만 변경할 수 있습니다.");
+		}
+	}
+
+	private NormalizedValues normalize(GroupValues values) {
+		if (values == null) throw invalidRequest("요청 본문은 필수입니다.");
+		String title = required(values.title(), "모임 제목", 100);
+		String description = required(values.description(), "모임 소개", 2000);
+		if (values.maxMemberCount() == null || values.maxMemberCount() < 1 || values.maxMemberCount() > 100) {
+			throw invalidRequest("총 정원은 1~100명이어야 합니다.");
+		}
+		String meetingRule = required(values.meetingRule(), "모임 규칙", 1000);
+		String location = required(values.location(), "모임 장소", 200);
+		List<RoleValues> roles = roles(values.recruitingRoles());
+		return new NormalizedValues(title, description, values.maxMemberCount(), meetingRule, location, roles);
+	}
+
+	private List<RoleValues> roles(List<RoleValues> values) {
+		if (values == null) throw invalidRequest("모집 역할 배열은 필수입니다.");
+		if (values.size() > 20) throw invalidRequest("모집 역할은 최대 20개까지 입력할 수 있습니다.");
+		List<RoleValues> normalized = new ArrayList<>();
+		Set<RoleValues> unique = new HashSet<>();
+		for (RoleValues value : values) {
+			if (value == null) throw invalidRequest("모집 역할은 null일 수 없습니다.");
+			RoleValues role = new RoleValues(required(value.role(), "모집 역할", 50),
+					optional(value.skill(), "모집 기술", 100));
+			if (!unique.add(role)) throw invalidRequest("동일한 모집 역할과 기술을 중복해 입력할 수 없습니다.");
+			normalized.add(role);
+		}
+		return normalized;
+	}
+
+	private String required(String value, String field, int maxLength) {
+		if (value == null) throw invalidRequest(field + "은(는) 필수입니다.");
+		String normalized = value.trim();
+		if (normalized.isEmpty() || normalized.length() > maxLength) {
+			throw invalidRequest(field + "은(는) 1~" + maxLength + "자여야 합니다.");
+		}
+		return normalized;
+	}
+
+	private String optional(String value, String field, int maxLength) {
+		if (value == null) return null;
+		return required(value, field, maxLength);
+	}
+
+	private static ApiException invalidRequest(String message) {
+		return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message);
+	}
+
+	private static ApiException authenticationRequired() {
+		return new ApiException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED", "로그인이 필요합니다.");
+	}
+
+	private static ApiException groupNotFound() {
+		return new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "모임이 존재하지 않습니다.");
+	}
+
+	public record GroupValues(String title, String description, Integer maxMemberCount, String meetingRule,
+			String location, List<RoleValues> recruitingRoles) {}
+
+	private record NormalizedValues(String title, String description, int maxMemberCount, String meetingRule,
+			String location, List<RoleValues> recruitingRoles) {}
+
+	public record GroupSummary(Long groupId, String title, com.mju.mjuton.group.domain.GroupCategory category,
+			String location, String meetingRule, int maxMemberCount, java.time.Instant createdAt) {
+		static GroupSummary from(StudyGroup group) {
+			return new GroupSummary(group.getId(), group.getTitle(), group.getCategory(), group.getLocation(),
+					group.getMeetingRule(), group.getMaxMemberCount(), group.getCreatedAt());
+		}
+	}
+
+	public record RoleDetail(String role, String skill) {}
+
+	public record GroupDetail(Long groupId, Long leaderUserId, String title,
+			com.mju.mjuton.group.domain.GroupCategory category, String description, int maxMemberCount,
+			String meetingRule, String location, List<RoleDetail> recruitingRoles, java.time.Instant createdAt,
+			java.time.Instant updatedAt) {
+		static GroupDetail from(StudyGroup group) {
+			return new GroupDetail(group.getId(), group.getLeaderUserId(), group.getTitle(), group.getCategory(),
+					group.getDescription(), group.getMaxMemberCount(), group.getMeetingRule(), group.getLocation(),
+					group.getRecruitingRoles().stream().map(role -> new RoleDetail(role.getRole(), role.getSkill())).toList(),
+					group.getCreatedAt(), group.getUpdatedAt());
+		}
+	}
+}

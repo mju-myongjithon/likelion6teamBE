@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -28,6 +29,12 @@ public class ApiExceptionHandler {
 	ResponseEntity<ErrorResponse> handle(HttpRequestMethodNotSupportedException exception) {
 		return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
 				.body(new ErrorResponse("METHOD_NOT_ALLOWED", "지원하지 않는 HTTP 메서드입니다."));
+	}
+
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	ResponseEntity<ErrorResponse> handle(HttpMessageNotReadableException exception) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+				.body(new ErrorResponse("INVALID_REQUEST", "요청 본문을 읽을 수 없습니다."));
 	}
 
 	@Schema(name = "ErrorResponse", description = "공통 API 오류 응답")
