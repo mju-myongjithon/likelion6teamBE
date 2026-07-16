@@ -33,13 +33,25 @@ class OpenApiDocumentationTests {
 				.andExpect(jsonPath("$.paths['/api/auth/session'].get.security[0].sessionCookie").isArray())
 				.andExpect(jsonPath("$.paths['/api/profile'].get.security[0].sessionCookie").isArray())
 				.andExpect(jsonPath("$.paths['/api/profile'].put.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/groups'].get.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/groups'].post.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/groups/{groupId}'].get.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/groups/{groupId}'].put.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/groups/{groupId}'].delete.security[0].sessionCookie").isArray())
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.type").value("apiKey"))
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.name").value("JSESSIONID"))
 				.andExpect(jsonPath("$.components.schemas.ProfileUpdateRequest.required",
 						hasItems("name", "schoolName", "departmentName", "residenceArea", "interests", "purposes", "roles")))
 				.andExpect(jsonPath("$.components.schemas.ProfileUpdateRequest.properties.interests.maxItems").value(20))
-				.andExpect(jsonPath("$.components.schemas.ProfileUpdateRequest.properties.interests.uniqueItems").value(true));
+				.andExpect(jsonPath("$.components.schemas.ProfileUpdateRequest.properties.interests.uniqueItems").value(true))
+				.andExpect(jsonPath("$.components.schemas.GroupRequest.required",
+						hasItems("title", "description", "maxMemberCount", "meetingRule", "location", "recruitingRoles")))
+				.andExpect(jsonPath("$.components.schemas.GroupRequest.properties.recruitingRoles.maxItems").value(20))
+				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.required", hasItems("role")))
+				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.properties.skill.type",
+						hasItems("string", "null")))
+				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.properties.skill.maxLength").value(100));
 	}
 
 	@Test
