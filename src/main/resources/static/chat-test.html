@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>모집 & 채팅 수동 테스트</title>
+	<style>
+		body { font-family: system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #1a1a1a; }
+		h1 { font-size: 20px; }
+		fieldset { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; padding: 12px 16px; }
+		legend { font-weight: 600; padding: 0 6px; }
+		label { display: inline-block; min-width: 70px; }
+		input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
+		button { padding: 6px 12px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+		button:disabled { background: #9db8f0; cursor: not-allowed; }
+		#status { font-weight: 600; }
+		#log { height: 220px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; padding: 10px; background: #fafafa; }
+		.msg { padding: 3px 0; border-bottom: 1px solid #eee; }
+		.me { color: #2563eb; }
+		.sys { color: #888; font-style: italic; }
+		.row { margin: 8px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+		.row input[type=text], .row input[type=password] { flex: 1; min-width: 160px; }
+		.rec { border: 1px solid #e2e2e2; border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+		.apps { margin-top: 6px; padding-left: 8px; border-left: 3px solid #eee; }
+	</style>
+</head>
+<body>
+	<h1>모집 &amp; 채팅 실시간 테스트</h1>
+	<p class="sys">두 사용자로 테스트하려면: 한 명은 일반 창, 다른 한 명은 <b>시크릿(Incognito) 창</b>에서 여세요. (같은 창의 두 탭은 세션을 공유해 같은 사용자가 됩니다.)</p>
+	<p class="sys">시드 계정: alice@mju.ac.kr / bob@mju.ac.kr (둘 다 비밀번호 password123)</p>
+
+	<fieldset>
+		<legend>1. 로그인</legend>
+		<div class="row"><label>이메일</label><input id="email" type="text" value="alice@mju.ac.kr"></div>
+		<div class="row"><label>비밀번호</label><input id="password" type="password" value="password123"></div>
+		<div class="row"><button id="loginBtn">로그인</button><span id="me" class="sys"></span></div>
+	</fieldset>
+
+	<fieldset>
+		<legend>2. 모집글 (팀원 모집)</legend>
+		<div class="row"><label>제목</label><input id="recTitle" type="text" value="해커톤 백엔드 팀원"></div>
+		<div class="row"><label>설명</label><input id="recDesc" type="text" value="스프링 부트 함께 하실 분"></div>
+		<div class="row"><label>정원</label><input id="recCap" type="number" value="3" style="max-width:90px"><button id="recCreateBtn">모집글 작성</button><button id="recListBtn">목록 새로고침</button></div>
+		<div id="recList"></div>
+		<p class="sys">흐름: (alice) 모집글 작성 → (bob) 목록에서 "참가신청" → (alice) "신청목록"에서 "승인" → 양쪽 "채팅 접속" → 아래에서 대화</p>
+	</fieldset>
+
+	<fieldset>
+		<legend>3. 채팅방 접속</legend>
+		<div class="row"><label>방 id</label><input id="roomId" type="text" value="1" style="max-width:80px"><button id="connectBtn" disabled>접속(구독)</button></div>
+		<div class="row">상태: <span id="status">연결 안 됨</span></div>
+	</fieldset>
+
+	<fieldset>
+		<legend>4. 메시지</legend>
+		<div id="log"></div>
+		<div class="row"><input id="content" type="text" placeholder="메시지를 입력하고 Enter" disabled><button id="sendBtn" disabled>전송</button></div>
+	</fieldset>
+
+	<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+	<script>
+		let stompClient = null;
+		let myUserId = null;
+
+		const $ = (id) => document.getElementById(id);
+		function log(text, cls) {
+			const div = document.createElement('div');
+			div.className = 'msg ' + (cls || '');
+			div.textContent = text;
+			$('log').appendChild(div);
+			$('log').scrollTop = $('log').scrollHeight;
+		}
+		function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+		function btn(label, onClick) {
+			const b = document.createElement('button');
+			b.textContent = label; b.style.marginRight = '6px'; b.onclick = onClick;
+			return b;
+		}
+		async function readError(res) {
+			const data = await res.json().catch(() => ({}));
+			return data.message || ('HTTP ' + res.status);
+		}
+
+		/* ---------- 1. 로그인 ---------- */
+		$('loginBtn').onclick = async () => {
+			const res = await fetch('/api/auth/login', {
+				method: 'POST', credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: $('email').value, password: $('password').value })
+			});
+			if (!res.ok) { alert('로그인 실패: ' + await readError(res)); return; }
+			const data = await res.json();
+			myUserId = data.userId;
+			$('me').textContent = '로그인됨 · userId=' + data.userId;
+			$('connectBtn').disabled = false;
+			log('로그인 성공 (userId=' + data.userId + ')', 'sys');
+			loadRecruitments();
+		};
+
+		/* ---------- 2. 모집글 ---------- */
+		$('recCreateBtn').onclick = async () => {
+			const body = { title: $('recTitle').value, description: $('recDesc').value, capacity: Number($('recCap').value) };
+			const res = await fetch('/api/recruitments', {
+				method: 'POST', credentials: 'include',
+				headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+			});
+			if (!res.ok) { alert('작성 실패: ' + await readError(res)); return; }
+			const data = await res.json();
+			log('모집글 작성됨 #' + data.id + ' (채팅방 roomId=' + data.chatRoomId + ')', 'sys');
+			loadRecruitments();
+		};
+		$('recListBtn').onclick = loadRecruitments;
+
+		async function loadRecruitments() {
+			const res = await fetch('/api/recruitments', { credentials: 'include' });
+			if (!res.ok) return;
+			const list = await res.json();
+			const box = $('recList');
+			box.innerHTML = '';
+			if (list.length === 0) { box.textContent = '(모집글 없음)'; return; }
+			list.forEach((r) => {
+				const card = document.createElement('div');
+				card.className = 'rec';
+				const head = document.createElement('div');
+				head.innerHTML = '<b>#' + r.id + ' ' + esc(r.title) + '</b> '
+					+ '<span class="sys">[' + r.status + '] 정원 ' + r.capacity
+					+ ' · 방장 user ' + r.authorId + ' · roomId ' + r.chatRoomId + '</span>';
+				card.appendChild(head);
+				const desc = document.createElement('div');
+				desc.className = 'sys'; desc.textContent = r.description;
+				card.appendChild(desc);
+
+				const actions = document.createElement('div');
+				actions.className = 'row';
+				const appsBox = document.createElement('div');
+				appsBox.className = 'apps';
+				actions.appendChild(btn('참가신청', () => applyTo(r.id)));
+				actions.appendChild(btn('채팅 접속', () => connectToRoom(r.chatRoomId)));
+				actions.appendChild(btn('신청목록(방장)', () => loadApplications(r.id, appsBox)));
+				actions.appendChild(btn('마감(방장)', () => closeRecruitment(r.id)));
+				actions.appendChild(btn('방장 양도(방장)', () => transferOwner(r.id)));
+				actions.appendChild(btn('나가기', () => leaveRoom(r.id)));
+				card.appendChild(actions);
+				card.appendChild(appsBox);
+				box.appendChild(card);
+			});
+		}
+
+		async function applyTo(recId) {
+			const res = await fetch('/api/recruitments/' + recId + '/applications', { method: 'POST', credentials: 'include' });
+			if (!res.ok) { alert('신청 실패: ' + await readError(res)); return; }
+			const data = await res.json();
+			log('모집글 #' + recId + ' 참가신청 완료 (신청 #' + data.id + ', ' + data.status + ')', 'sys');
+		}
+
+		async function loadApplications(recId, container) {
+			const res = await fetch('/api/recruitments/' + recId + '/applications', { credentials: 'include' });
+			if (res.status === 403) { container.textContent = '(방장만 신청 목록을 볼 수 있어요)'; return; }
+			if (!res.ok) { container.textContent = '(조회 실패)'; return; }
+			const apps = await res.json();
+			container.innerHTML = '';
+			if (apps.length === 0) { container.textContent = '(대기 중인 신청 없음)'; return; }
+			apps.forEach((a) => {
+				const row = document.createElement('div');
+				row.className = 'row';
+				const span = document.createElement('span');
+				span.textContent = '신청 #' + a.id + ' · user ' + a.applicantId + ' · ' + a.status;
+				row.appendChild(span);
+				row.appendChild(btn('승인', async () => { await decide(recId, a.id, 'approve'); loadApplications(recId, container); loadRecruitments(); }));
+				row.appendChild(btn('거절', async () => { await decide(recId, a.id, 'reject'); loadApplications(recId, container); }));
+				container.appendChild(row);
+			});
+		}
+
+		async function decide(recId, reqId, action) {
+			const res = await fetch('/api/recruitments/' + recId + '/applications/' + reqId + '/' + action, { method: 'POST', credentials: 'include' });
+			if (!res.ok) { alert(action + ' 실패: ' + await readError(res)); return; }
+			log('신청 #' + reqId + ' ' + (action === 'approve' ? '승인' : '거절') + ' 완료', 'sys');
+		}
+
+		async function closeRecruitment(recId) {
+			const res = await fetch('/api/recruitments/' + recId + '/close', { method: 'POST', credentials: 'include' });
+			if (!res.ok) { alert('마감 실패: ' + await readError(res)); return; }
+			log('모집글 #' + recId + ' 마감', 'sys');
+			loadRecruitments();
+		}
+
+		async function transferOwner(recId) {
+			const value = prompt('새 방장의 userId를 입력하세요 (채팅방 멤버여야 함)');
+			if (!value) return;
+			const res = await fetch('/api/recruitments/' + recId + '/transfer', {
+				method: 'POST', credentials: 'include',
+				headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newOwnerId: Number(value) })
+			});
+			if (!res.ok) { alert('양도 실패: ' + await readError(res)); return; }
+			log('모집글 #' + recId + ' 방장을 user ' + value + '에게 양도', 'sys');
+			loadRecruitments();
+		}
+
+		async function leaveRoom(recId) {
+			const res = await fetch('/api/recruitments/' + recId + '/leave', { method: 'POST', credentials: 'include' });
+			if (!res.ok) { alert('나가기 실패: ' + await readError(res)); return; }
+			log('모집글 #' + recId + ' 방에서 나감', 'sys');
+			loadRecruitments();
+		}
+
+		/* ---------- 3~4. 채팅 ---------- */
+		function connect(roomId) {
+			if (!roomId) { alert('방 id를 입력하세요'); return; }
+			// 이미 연결돼 있으면 먼저 끊는다(구독이 쌓여 내 화면에만 중복 표시되는 것을 방지).
+			if (stompClient) { try { stompClient.disconnect(); } catch (e) {} stompClient = null; }
+			$('connectBtn').disabled = true;
+			const socket = new SockJS('/ws-chat');
+			stompClient = Stomp.over(socket);
+			stompClient.debug = null;
+			stompClient.connect({}, () => {
+				$('connectBtn').disabled = false;
+				$('status').textContent = '방 ' + roomId + ' 구독 중';
+				$('content').disabled = false;
+				$('sendBtn').disabled = false;
+				log('WebSocket 연결됨 · /topic/chat/' + roomId + ' 구독', 'sys');
+				stompClient.subscribe('/topic/chat/' + roomId, (frame) => {
+					const m = JSON.parse(frame.body);
+					const mine = m.senderId === myUserId;
+					log((mine ? '나' : ('user ' + m.senderId)) + ': ' + m.content, mine ? 'me' : '');
+				});
+				loadHistory(roomId);
+			}, (err) => {
+				$('connectBtn').disabled = false;
+				$('status').textContent = '연결 실패';
+				log('연결 실패(멤버가 아니거나 로그인 안 됨): ' + err, 'sys');
+			});
+		}
+		function connectToRoom(roomId) { $('roomId').value = roomId; connect(String(roomId)); }
+		$('connectBtn').onclick = () => connect($('roomId').value.trim());
+
+		async function loadHistory(roomId) {
+			const res = await fetch('/api/chat/rooms/' + roomId + '/messages', { credentials: 'include' });
+			if (!res.ok) return;
+			const list = await res.json();
+			list.reverse().forEach((m) => log('[이전] user ' + m.senderId + ': ' + m.content, 'sys'));
+		}
+
+		function send() {
+			const content = $('content').value.trim();
+			if (!content || !stompClient) return;
+			stompClient.send('/app/chat/' + $('roomId').value.trim() + '/messages', {}, JSON.stringify({ content }));
+			$('content').value = '';
+		}
+		$('sendBtn').onclick = send;
+		$('content').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+	</script>
+</body>
+</html>
