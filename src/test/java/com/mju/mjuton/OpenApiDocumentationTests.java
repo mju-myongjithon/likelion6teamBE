@@ -38,6 +38,11 @@ class OpenApiDocumentationTests {
 				.andExpect(jsonPath("$.paths['/api/groups/{groupId}'].get.security").doesNotExist())
 				.andExpect(jsonPath("$.paths['/api/groups/{groupId}'].put.security[0].sessionCookie").isArray())
 				.andExpect(jsonPath("$.paths['/api/groups/{groupId}'].delete.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/events'].get.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/events'].post.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/events/{eventId}'].get.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/events/{eventId}'].put.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/events/{eventId}'].delete.security[0].sessionCookie").isArray())
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.type").value("apiKey"))
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.name").value("JSESSIONID"))
@@ -51,7 +56,12 @@ class OpenApiDocumentationTests {
 				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.required", hasItems("role")))
 				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.properties.skill.type",
 						hasItems("string", "null")))
-				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.properties.skill.maxLength").value(100));
+				.andExpect(jsonPath("$.components.schemas.RecruitingRoleRequest.properties.skill.maxLength").value(100))
+				.andExpect(jsonPath("$.components.schemas.EventRequest.required",
+						hasItems("title", "description", "organizer", "applicationDeadlineAt", "startsAt", "endsAt",
+								"location", "relatedUrl", "tags")))
+				.andExpect(jsonPath("$.components.schemas.EventRequest.properties.tags.maxItems").value(20))
+				.andExpect(jsonPath("$.components.schemas.EventRequest.properties.tags.uniqueItems").value(true));
 	}
 
 	@Test
