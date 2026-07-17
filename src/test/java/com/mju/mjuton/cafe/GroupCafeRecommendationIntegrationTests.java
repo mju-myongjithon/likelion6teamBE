@@ -1,5 +1,6 @@
 package com.mju.mjuton.cafe;
 
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -94,6 +95,25 @@ class GroupCafeRecommendationIntegrationTests {
 		mvc.perform(post("/api/groups/{groupId}/cafes/recommendations", groupId).session(leaderSession))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("GROUP_MEMBER_LOCATION_REQUIRED"));
+	}
+
+	@Test
+	void ignoresMembersWithoutResidenceCoordinatesWhenTwoLocationsRemain() throws Exception {
+		MockHttpSession leaderSession = sessionFor("group-cafe-partial-leader@mju.ac.kr");
+		User leader = user(leaderSession);
+		User locatedMember = user("group-cafe-partial-located@mju.ac.kr");
+		User missingMember = user("group-cafe-partial-missing@mju.ac.kr");
+		createProfile(leader, "리더", 37.2210, 127.1860);
+		createProfile(locatedMember, "위치 멤버", 37.2250, 127.1910);
+		createProfileWithoutCoordinates(missingMember, "좌표 없는 멤버");
+		long groupId = createGroup(leader, locatedMember);
+		StudyGroup group = groups.findById(groupId).orElseThrow();
+		members.saveAndFlush(new GroupMember(group, missingMember));
+
+		mvc.perform(post("/api/groups/{groupId}/cafes/recommendations", groupId).session(leaderSession))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.recommendations.length()").value(3))
+				.andExpect(jsonPath("$.recommendations[0].reason").value(startsWith("2명의")));
 	}
 
 	private long createGroup(User leader, User member) {
