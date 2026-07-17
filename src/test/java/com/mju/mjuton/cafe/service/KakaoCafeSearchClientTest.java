@@ -2,9 +2,17 @@ package com.mju.mjuton.cafe.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 class KakaoCafeSearchClientTest {
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -88,5 +96,33 @@ class KakaoCafeSearchClientTest {
 		assertThatThrownBy(() -> new KakaoCafeSearchClient("", 2000, 16))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("size");
+	}
+
+	@Test
+	void searchesNearbyCafesFromKakaoResponseBody() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		KakaoCafeSearchClient client = new KakaoCafeSearchClient(builder.build(), "test-api-key", 2000, 3);
+		server.expect(requestTo(startsWith("https://dapi.kakao.com/v2/local/search/keyword.json")))
+				.andExpect(header(HttpHeaders.AUTHORIZATION, "KakaoAK test-api-key"))
+				.andRespond(withSuccess("""
+						{
+						  "documents": [
+						    {
+						      "place_name": "실제 응답 카페",
+						      "x": "126.9225",
+						      "y": "37.4020",
+						      "road_address_name": "경기 안양시",
+						      "phone": "031-000-0000"
+						    }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		var candidates = client.searchNearby(37.4, 126.9);
+
+		assertThat(candidates).hasSize(1);
+		assertThat(candidates.get(0).name()).isEqualTo("실제 응답 카페");
+		server.verify();
 	}
 }
