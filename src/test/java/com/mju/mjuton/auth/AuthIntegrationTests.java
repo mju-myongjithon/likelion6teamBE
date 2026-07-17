@@ -82,6 +82,33 @@ class AuthIntegrationTests {
 	}
 
 	@Test
+	void verificationCodeCanBeCheckedBeforeSignupWithoutBeingConsumed() throws Exception {
+		String email = "verify@mju.ac.kr";
+		mvc.perform(post("/api/auth/email-verifications")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isCreated());
+		String code = mailSender.code(email);
+		String wrongCode = code.equals("000000") ? "111111" : "000000";
+
+		mvc.perform(post("/api/auth/email-verifications/verify")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"" + wrongCode + "\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_VERIFICATION"));
+
+		mvc.perform(post("/api/auth/email-verifications/verify")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\",\"verificationCode\":\"" + code + "\"}"))
+				.andExpect(status().isNoContent());
+		assertThat(verifications.findFirstByEmailOrderByCreatedAtDesc(email).orElseThrow().getConsumedAt()).isNull();
+
+		mvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+				.content(signupRequest(email, code, "password123")))
+				.andExpect(status().isCreated());
+	}
+
+	@Test
 	void loginCreatesSessionAndWrongPasswordIsRejected() throws Exception {
 		mvc.perform(post("/api/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"login@mju.ac.kr\"}"));

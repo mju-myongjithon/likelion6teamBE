@@ -60,6 +60,21 @@ public class AuthService {
 		}
 	}
 
+	@Transactional(readOnly = true)
+	public void verifyCode(String rawEmail, String code) {
+		String email = normalizeEmail(rawEmail);
+		if (code == null || !code.matches("\\d{6}")) {
+			throw invalidVerification();
+		}
+		EmailVerification verification = verifications.findFirstByEmailOrderByCreatedAtDesc(email)
+				.orElseThrow(() -> invalidVerification());
+		Instant now = Instant.now();
+		if (verification.getConsumedAt() != null || !verification.getExpiresAt().isAfter(now)
+				|| !passwordEncoder.matches(code, verification.getCodeHash())) {
+			throw invalidVerification();
+		}
+	}
+
 	User createVerifiedUser(String rawEmail, String code, String password) {
 		String email = normalizeEmail(rawEmail);
 		validatePassword(password);
