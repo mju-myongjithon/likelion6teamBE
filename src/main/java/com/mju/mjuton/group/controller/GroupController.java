@@ -8,6 +8,7 @@ import com.mju.mjuton.group.domain.StudyGroup.RoleValues;
 import com.mju.mjuton.group.service.GroupService;
 import com.mju.mjuton.group.service.GroupService.GroupDetail;
 import com.mju.mjuton.group.service.GroupService.GroupSummary;
+import com.mju.mjuton.group.service.GroupService.MyGroupResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -61,6 +62,19 @@ public class GroupController {
 	@Operation(summary = "스터디 모임 목록 조회", description = "최신 등록순으로 공개 목록을 조회합니다.")
 	List<GroupSummary> findAll() {
 		return groupService.findAll();
+	}
+
+	@GetMapping("/me")
+	@Operation(summary = "내 모임 목록 조회", description = "리더이거나 승인된 참여자인 모임을 최신 등록순으로 조회합니다.")
+	@SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE)
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "내 모임 목록 조회 성공",
+					content = @Content(array = @ArraySchema(schema = @Schema(implementation = MyGroupResponse.class)))),
+			@ApiResponse(responseCode = "401", description = "로그인 필요",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+	})
+	List<MyGroupResponse> findMine(@Parameter(hidden = true) HttpServletRequest request) {
+		return groupService.findMine(sessionUserId(request));
 	}
 
 	@GetMapping("/{groupId}")

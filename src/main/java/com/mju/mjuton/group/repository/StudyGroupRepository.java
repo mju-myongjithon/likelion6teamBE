@@ -13,6 +13,16 @@ import org.springframework.data.repository.query.Param;
 public interface StudyGroupRepository extends JpaRepository<StudyGroup, Long> {
 	List<StudyGroup> findAllByOrderByCreatedAtDescIdDesc();
 
+	@Query("""
+			select distinct studyGroup
+			from StudyGroup studyGroup
+			join fetch studyGroup.leader leader
+			left join studyGroup.members member
+			where leader.id = :userId or member.user.id = :userId
+			order by studyGroup.createdAt desc, studyGroup.id desc
+			""")
+	List<StudyGroup> findMyGroups(@Param("userId") Long userId);
+
 	@EntityGraph(attributePaths = "recruitingRoles")
 	Optional<StudyGroup> findWithRecruitingRolesById(Long id);
 

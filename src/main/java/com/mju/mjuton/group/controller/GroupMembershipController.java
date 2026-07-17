@@ -2,12 +2,17 @@ package com.mju.mjuton.group.controller;
 
 import com.mju.mjuton.auth.controller.AuthController;
 import com.mju.mjuton.global.ApiException;
+import com.mju.mjuton.global.ApiExceptionHandler.ErrorResponse;
 import com.mju.mjuton.global.OpenApiConfig;
 import com.mju.mjuton.group.service.GroupMembershipService;
 import com.mju.mjuton.group.service.GroupMembershipService.ApplicationResponse;
 import com.mju.mjuton.group.service.GroupMembershipService.MemberResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -49,6 +54,21 @@ public class GroupMembershipController {
 	List<ApplicationResponse> applications(@PathVariable long groupId,
 			@Parameter(hidden = true) HttpServletRequest request) {
 		return memberships.pendingApplications(groupId, sessionUserId(request));
+	}
+
+	@GetMapping("/applications/me")
+	@Operation(summary = "내 참가 신청 조회")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "내 참가 신청 조회 성공",
+					content = @Content(schema = @Schema(implementation = ApplicationResponse.class))),
+			@ApiResponse(responseCode = "401", description = "로그인 필요",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+			@ApiResponse(responseCode = "404", description = "모임 또는 참가 신청 없음",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+	})
+	ApplicationResponse myApplication(@PathVariable long groupId,
+			@Parameter(hidden = true) HttpServletRequest request) {
+		return memberships.myApplication(groupId, sessionUserId(request));
 	}
 
 	@PostMapping("/applications/{applicationId}/approve")
