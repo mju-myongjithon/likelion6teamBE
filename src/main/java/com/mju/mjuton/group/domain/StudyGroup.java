@@ -33,6 +33,9 @@ public class StudyGroup {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private GroupCategory category;
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20, columnDefinition = "varchar(20) default 'RECRUITING'")
+	private GroupStatus status;
 	@Column(nullable = false, length = 2000)
 	private String description;
 	@Column(nullable = false)
@@ -48,6 +51,10 @@ public class StudyGroup {
 	@OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("position ASC")
 	private List<RecruitingRole> recruitingRoles = new ArrayList<>();
+	@OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
+	private List<GroupMember> members = new ArrayList<>();
+	@OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
+	private List<GroupJoinApplication> joinApplications = new ArrayList<>();
 
 	protected StudyGroup() {}
 
@@ -55,9 +62,29 @@ public class StudyGroup {
 			String meetingRule, String location) {
 		this.leader = leader;
 		this.category = GroupCategory.STUDY;
+		this.status = GroupStatus.RECRUITING;
 		updateFields(title, description, maxMemberCount, meetingRule, location);
 		this.createdAt = Instant.now();
 		this.updatedAt = this.createdAt;
+	}
+
+	public void addInitialMember(User user) {
+		this.members.add(new GroupMember(this, user));
+	}
+
+	public void closeRecruitment() {
+		this.status = GroupStatus.CLOSED;
+		this.updatedAt = Instant.now();
+	}
+
+	public void reopenRecruitment() {
+		this.status = GroupStatus.RECRUITING;
+		this.updatedAt = Instant.now();
+	}
+
+	public void transferLeadership(User newLeader) {
+		this.leader = newLeader;
+		this.updatedAt = Instant.now();
 	}
 
 	public void update(String title, String description, int maxMemberCount, String meetingRule,
@@ -86,6 +113,8 @@ public class StudyGroup {
 
 	public Long getId() { return id; }
 	public Long getLeaderUserId() { return leader.getId(); }
+	public GroupStatus getStatus() { return status == null ? GroupStatus.RECRUITING : status; }
+	public boolean isRecruiting() { return getStatus() == GroupStatus.RECRUITING; }
 	public String getTitle() { return title; }
 	public GroupCategory getCategory() { return category; }
 	public String getDescription() { return description; }
