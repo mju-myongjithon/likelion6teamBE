@@ -63,6 +63,7 @@ class KakaoCafeSearchClient implements CafeSearchClient {
 							.queryParam("y", latitude)
 							.queryParam("radius", radiusMeters)
 							.queryParam("size", size)
+							.queryParam("sort", "distance")
 							.build())
 					.header(HttpHeaders.AUTHORIZATION, "KakaoAK " + apiKey)
 					.retrieve()
