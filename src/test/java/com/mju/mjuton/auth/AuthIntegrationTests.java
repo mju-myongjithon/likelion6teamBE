@@ -36,6 +36,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import com.mju.mjuton.global.ApiException;
 
 @SpringBootTest
@@ -204,6 +205,24 @@ class AuthIntegrationTests {
 	}
 
 	@Test
+	void mailDeliveryFailureRollsBackVerificationAndAllowsImmediateRetry() throws Exception {
+		String email = "mail-failure@mju.ac.kr";
+		mailSender.failNext();
+
+		mvc.perform(post("/api/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("EMAIL_DELIVERY_FAILED"));
+		assertThat(verifications.findFirstByEmailOrderByCreatedAtDesc(email)).isEmpty();
+
+		mvc.perform(post("/api/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + email + "\"}"))
+				.andExpect(status().isCreated());
+		assertThat(mailSender.code(email)).isNotBlank();
+		assertThat(verifications.findFirstByEmailOrderByCreatedAtDesc(email)).isPresent();
+	}
+
+	@Test
 	void signupRejectsInvalidCodeShapeAndPasswordByteLength() throws Exception {
 		String email = "boundary@mju.ac.kr";
 		mvc.perform(post("/api/auth/email-verifications").contentType(MediaType.APPLICATION_JSON)
@@ -291,7 +310,12 @@ class AuthIntegrationTests {
 
 	static class CapturingMailSender implements VerificationMailSender {
 		private final Map<String, String> codes = new ConcurrentHashMap<>();
+		private final AtomicBoolean failNext = new AtomicBoolean(false);
 		String code(String email) { return codes.get(email); }
-		@Override public void send(String email, String code) { codes.put(email, code); }
+		void failNext() { failNext.set(true); }
+		@Override public void send(String email, String code) {
+			if (failNext.getAndSet(false)) throw new IllegalStateException("mail delivery failed");
+			codes.put(email, code);
+		}
 	}
 }

@@ -36,11 +36,10 @@ public class AuthService {
 
 	public synchronized void sendVerification(String rawEmail) {
 		String email = normalizeEmail(rawEmail);
-		String code = transactionTemplate.execute(status -> createVerification(email));
-		mailSender.send(email, code);
+		transactionTemplate.executeWithoutResult(status -> createAndSendVerification(email));
 	}
 
-	private String createVerification(String email) {
+	private void createAndSendVerification(String email) {
 		if (users.existsByEmail(email)) {
 			throw new ApiException(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", "이미 가입된 이메일입니다.");
 		}
@@ -52,7 +51,13 @@ public class AuthService {
 
 		String code = "%06d".formatted(random.nextInt(1_000_000));
 		verifications.saveAndFlush(new EmailVerification(email, passwordEncoder.encode(code), now));
-		return code;
+		try {
+			mailSender.send(email, code);
+		} catch (RuntimeException exception) {
+			if (exception instanceof ApiException apiException) throw apiException;
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "EMAIL_DELIVERY_FAILED",
+					"인증번호 이메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+		}
 	}
 
 	User createVerifiedUser(String rawEmail, String code, String password) {
