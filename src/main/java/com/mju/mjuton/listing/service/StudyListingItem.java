@@ -12,9 +12,10 @@ public record StudyListingItem(
 		String location,
 		String meetingRule,
 		int maxMemberCount,
+		long currentMemberCount,
 		Instant createdAt) implements ListingItem {
 	static StudyListingItem from(GroupSummary group) {
 		return new StudyListingItem("STUDY", group.groupId(), group.title(), group.location(), group.meetingRule(),
-				group.maxMemberCount(), group.createdAt());
+				group.maxMemberCount(), group.currentMemberCount(), group.createdAt());
 	}
 }
