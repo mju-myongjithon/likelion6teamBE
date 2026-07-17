@@ -16,6 +16,7 @@ concurrency:
 jobs:
   publish-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -37,13 +38,23 @@ jobs:
           jar_path="$(find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -print -quit)"
           test -n "$jar_path"
           cp "$jar_path" build/deploy/mjuton.jar
+          cp scripts/create-chat-tables.sql build/deploy/create-chat-tables.sql
+          printf '%s\n' "$GITHUB_SHA" > build/deploy/VERSION
           cd build/deploy
-          sha256sum mjuton.jar > mjuton.jar.sha256
+          sha256sum mjuton.jar create-chat-tables.sql VERSION > MANIFEST.sha256
+          tar -czf ../mjuton-deploy.tar.gz \
+            mjuton.jar create-chat-tables.sql VERSION MANIFEST.sha256
 
       - name: Publish deployment artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$GITHUB_SHA" != "$main_sha" ]; then
+            echo "Refusing to replace the production artifact with a stale commit." >&2
+            exit 1
+          fi
+
           if ! gh release view deploy-latest >/dev/null 2>&1; then
             gh release create deploy-latest \
               --target "$GITHUB_SHA" \
@@ -53,24 +64,28 @@ jobs:
           fi
 
           gh release upload deploy-latest \
-            build/deploy/mjuton.jar \
-            build/deploy/mjuton.jar.sha256 \
+            build/mjuton-deploy.tar.gz \
             --clobber
 
       - name: Verify deployed artifact
         run: |
-          expected="$(cut -d ' ' -f 1 build/deploy/mjuton.jar.sha256)"
+          expected="$GITHUB_SHA"
 
-          for attempt in $(seq 1 30); do
-            deployed="$(curl -fsS --max-time 5 http://52.78.186.220/deploy-version || true)"
-            health="$(curl -fsS --max-time 5 http://52.78.186.220/api/health || true)"
+          for attempt in $(seq 1 60); do
+            deployed="$(curl -fsS --max-time 5 https://52-78-186-220.sslip.io/deploy-version || true)"
+            health="$(curl -fsS --max-time 5 https://52-78-186-220.sslip.io/api/health || true)"
 
-            if [ "$deployed" = "$expected" ] && echo "$health" | grep -q '"status":"ok"'; then
+            if [ "$deployed" = "$expected" ] \
+              && echo "$health" | grep -q '"status":"ok"' \
+              && curl -fsS --max-time 5 \
+                https://52-78-186-220.sslip.io/swagger-ui/index.html >/dev/null \
+              && curl -fsS --max-time 5 \
+                https://52-78-186-220.sslip.io/v3/api-docs >/dev/null; then
               exit 0
             fi
 
             sleep 5
           done
 
-          echo "The EC2 instance did not report the expected artifact checksum." >&2
+          echo "The EC2 instance did not report the expected commit." >&2
           exit 1

@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec 9>/run/lock/mjuton-update.lock
+flock -n 9 || exit 0
+
+release_base="https://github.com/mju-myongjithon/likelion6teamBE/releases/download/deploy-latest"
+state_dir="/var/lib/mjuton-deploy"
+backup_dir="/opt/mjuton/backups"
+release_dir="/opt/mjuton/releases"
+current_link="/opt/mjuton/current"
+legacy_jar="/opt/mjuton/app.jar"
+version_file="$state_dir/version"
+migration_version_file="$state_dir/chat-migration-version"
+failed_version_file="$state_dir/failed-version"
+failure_state_file="$state_dir/failure-state"
+tmp_dir="$(mktemp -d)"
+candidate_version=""
+candidate_release=""
+final_release=""
+
+write_atomic() {
+  local value="$1"
+  local destination="$2"
+  local temporary
+
+  temporary="$(mktemp "$state_dir/.state.XXXXXX")"
+  printf '%s\n' "$value" > "$temporary"
+  chmod 0644 "$temporary"
+  mv -f "$temporary" "$destination"
+}
+
+on_exit() {
+  local status=$?
+  local active_target
+  local failure_attempt_version
+  local failure_count
+  local failure_extra
+
+  rm -rf "$tmp_dir"
+  if [[ -n "$candidate_release" && -d "$candidate_release" ]]; then
+    rm -rf "$candidate_release"
+  fi
+  active_target="$(readlink -f "$current_link" 2>/dev/null || true)"
+  if ((status != 0)) && [[ -n "$final_release" \
+    && "$final_release" != "$active_target" && -d "$final_release" ]]; then
+    rm -rf "$final_release"
+  fi
+  if [[ -d "$release_dir" ]]; then
+    retain_releases || true
+  fi
+  if ((status != 0)) && [[ -n "$candidate_version" ]]; then
+    read -r failure_attempt_version failure_count failure_extra \
+      < "$failure_state_file" 2>/dev/null || true
+    if [[ "$failure_attempt_version" != "$candidate_version" \
+      || ! "$failure_count" =~ ^[0-9]+$ || -n "$failure_extra" ]]; then
+      failure_count=0
+    fi
+    failure_count=$((failure_count + 1))
+    write_atomic "$candidate_version $failure_count" "$failure_state_file"
+    if ((failure_count >= 3)); then
+      write_atomic "$candidate_version" "$failed_version_file"
+    fi
+  fi
+}
+trap on_exit EXIT
+
+wait_for_health() {
+  local attempt
+
+  for attempt in $(seq 1 30); do
+    if curl -fsS --max-time 3 http://127.0.0.1:8080/api/health \
+      | grep -q '"status":"ok"'; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+activate_release() {
+  local target="$1"
+  local temporary_link="$current_link.new"
+
+  ln -sfn "$target" "$temporary_link"
+  mv -Tf "$temporary_link" "$current_link"
+}
+
+retain_newest() {
+  local directory="$1"
+  local keep="$2"
+  local pattern="$3"
+
+  find "$directory" -mindepth 1 -maxdepth 1 -type f -name "$pattern" \
+    -printf '%T@ %p\n' \
+    | sort -nr \
+    | tail -n "+$((keep + 1))" \
+    | cut -d ' ' -f 2- \
+    | xargs -r rm -f
+}
+
+retain_releases() {
+  local active_target
+  local kept=0
+  local timestamp
+  local path
+
+  active_target="$(readlink -f "$current_link" 2>/dev/null || true)"
+  while read -r timestamp path; do
+    if [[ "$path" == "$active_target" ]]; then
+      continue
+    fi
+    if ((kept < 2)); then
+      kept=$((kept + 1))
+    else
+      rm -rf "$path"
+    fi
+  done < <(
+    find "$release_dir" -mindepth 1 -maxdepth 1 -type d \
+      ! -name '.candidate-*' \
+      -printf '%T@ %p\n' \
+      | sort -nr
+  )
+}
+
+mkdir -p "$state_dir" "$backup_dir" "$release_dir"
+find "$release_dir" -mindepth 1 -maxdepth 1 -type d -name '.candidate-*' \
+  -exec rm -rf {} +
+
+cache_bust="$(date +%s)"
+curl -LfsS --retry 3 --connect-timeout 10 --max-time 300 \
+  "$release_base/mjuton-deploy.tar.gz?cache=$cache_bust" \
+  -o "$tmp_dir/mjuton-deploy.tar.gz"
+
+mapfile -t archive_entries < <(tar -tzf "$tmp_dir/mjuton-deploy.tar.gz" | sort)
+expected_entries=(
+  "MANIFEST.sha256"
+  "VERSION"
+  "create-chat-tables.sql"
+  "mjuton.jar"
+)
+[[ "${archive_entries[*]}" == "${expected_entries[*]}" ]]
+
+mkdir "$tmp_dir/candidate"
+tar -xzf "$tmp_dir/mjuton-deploy.tar.gz" -C "$tmp_dir/candidate"
+candidate_version="$(tr -d '\r\n' < "$tmp_dir/candidate/VERSION")"
+[[ "$candidate_version" =~ ^[0-9a-f]{40}$ ]]
+
+failed_version="$(cat "$failed_version_file" 2>/dev/null || true)"
+if [[ "$candidate_version" == "$failed_version" ]]; then
+  exit 0
+fi
+
+(
+  cd "$tmp_dir/candidate"
+  [[ "$(wc -l < MANIFEST.sha256)" -eq 3 ]]
+  mapfile -t manifest_entries < <(awk '{ print $2 }' MANIFEST.sha256 | sort)
+  [[ "${manifest_entries[*]}" == "VERSION create-chat-tables.sql mjuton.jar" ]]
+  sha256sum --check --strict MANIFEST.sha256
+  [[ -s mjuton.jar && -s create-chat-tables.sql ]]
+)
+
+current_version="$(cat "$version_file" 2>/dev/null || true)"
+active_version="$(
+  tr -d '\r\n' < "$current_link/VERSION" 2>/dev/null || true
+)"
+if [[ "$candidate_version" == "$current_version" \
+  && "$candidate_version" == "$active_version" ]]; then
+  rm -f \
+    "$failed_version_file" \
+    "$failure_state_file"
+  exit 0
+fi
+
+final_release="$release_dir/$candidate_version"
+candidate_release="$release_dir/.candidate-$candidate_version-$$"
+if [[ ! -d "$final_release" ]]; then
+  mkdir "$candidate_release"
+  install -o mjuton -g mjuton -m 0640 \
+    "$tmp_dir/candidate/mjuton.jar" "$candidate_release/mjuton.jar"
+  install -o root -g root -m 0644 \
+    "$tmp_dir/candidate/create-chat-tables.sql" \
+    "$candidate_release/create-chat-tables.sql"
+  install -o root -g root -m 0644 \
+    "$tmp_dir/candidate/VERSION" "$candidate_release/VERSION"
+  install -o root -g root -m 0644 \
+    "$tmp_dir/candidate/MANIFEST.sha256" "$candidate_release/MANIFEST.sha256"
+  mv "$candidate_release" "$final_release"
+fi
+(
+  cd "$final_release"
+  sha256sum --check --strict MANIFEST.sha256
+)
+
+if [[ ! -L "$current_link" && -f "$legacy_jar" ]]; then
+  legacy_release="$release_dir/legacy-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir "$legacy_release"
+  install -o mjuton -g mjuton -m 0640 "$legacy_jar" "$legacy_release/mjuton.jar"
+  printf '%s\n' "legacy" > "$legacy_release/VERSION"
+  activate_release "$legacy_release"
+fi
+
+previous_target="$(readlink -f "$current_link" 2>/dev/null || true)"
+migration_checksum="$(
+  awk '$2 == "create-chat-tables.sql" { print $1 }' \
+    "$tmp_dir/candidate/MANIFEST.sha256"
+)"
+[[ "$migration_checksum" =~ ^[0-9a-f]{64}$ ]]
+current_migration="$(cat "$migration_version_file" 2>/dev/null || true)"
+
+if [[ "$current_migration" != "$migration_checksum" ]]; then
+  backup="$backup_dir/mjuton-pre-migration-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  backup_temporary="$(mktemp "$backup_dir/.backup.XXXXXX")"
+  if ! docker exec mjuton-postgres-1 sh -lc \
+    'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup_temporary"; then
+    rm -f "$backup_temporary"
+    exit 1
+  fi
+  chmod 0600 "$backup_temporary"
+  mv "$backup_temporary" "$backup"
+  retain_newest "$backup_dir" 5 'mjuton-pre-migration-*.dump'
+
+  docker exec -i mjuton-postgres-1 sh -lc \
+    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
+    < "$final_release/create-chat-tables.sql"
+
+  write_atomic "$migration_checksum" "$migration_version_file"
+fi
+
+activate_release "$final_release"
+if systemctl restart mjuton.service && wait_for_health; then
+  write_atomic "$candidate_version" "$version_file"
+  rm -f \
+    "$failed_version_file" \
+    "$failure_state_file"
+  touch "$final_release"
+  retain_releases
+  candidate_version=""
+  exit 0
+fi
+
+if [[ -n "$previous_target" && -f "$previous_target/mjuton.jar" ]]; then
+  activate_release "$previous_target"
+  if systemctl restart mjuton.service && wait_for_health; then
+    previous_version="$(tr -d '\r\n' < "$previous_target/VERSION")"
+    write_atomic "$previous_version" "$version_file"
+  else
+    echo "Deployment and rollback health checks failed." >&2
+    exit 1
+  fi
+else
+  echo "Deployment failed and no previous release is available." >&2
+  exit 1
+fi
+
+echo "Deployment failed; the previous healthy release was restored." >&2
+exit 1

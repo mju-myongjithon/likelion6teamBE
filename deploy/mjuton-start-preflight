@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+service_origin="https://52-78-186-220.sslip.io"
+
+[[ "${SESSION_COOKIE_SECURE:-}" == "true" ]]
+[[ ",${MJUTON_CORS_ALLOWED_ORIGINS:-}," == *",$service_origin,"* ]]
+test -s /opt/mjuton/current/mjuton.jar
