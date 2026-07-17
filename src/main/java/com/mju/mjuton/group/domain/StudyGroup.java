@@ -1,6 +1,7 @@
 package com.mju.mjuton.group.domain;
 
 import com.mju.mjuton.auth.domain.User;
+import com.mju.mjuton.event.domain.Event;
 import com.mju.mjuton.scrap.domain.GroupScrap;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -29,6 +30,9 @@ public class StudyGroup {
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "leader_user_id", nullable = false)
 	private User leader;
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "event_id")
+	private Event event;
 	@Column(nullable = false, length = 100)
 	private String title;
 	@Enumerated(EnumType.STRING)
@@ -63,7 +67,13 @@ public class StudyGroup {
 
 	public StudyGroup(User leader, String title, String description, int maxMemberCount,
 			String meetingRule, String location) {
+		this(leader, null, title, description, maxMemberCount, meetingRule, location);
+	}
+
+	public StudyGroup(User leader, Event event, String title, String description, int maxMemberCount,
+			String meetingRule, String location) {
 		this.leader = leader;
+		this.event = event;
 		this.category = GroupCategory.STUDY;
 		this.status = GroupStatus.RECRUITING;
 		updateFields(title, description, maxMemberCount, meetingRule, location);
@@ -87,6 +97,11 @@ public class StudyGroup {
 
 	public void transferLeadership(User newLeader) {
 		this.leader = newLeader;
+		this.updatedAt = Instant.now();
+	}
+
+	public void linkEvent(Event event) {
+		this.event = event;
 		this.updatedAt = Instant.now();
 	}
 
@@ -116,6 +131,8 @@ public class StudyGroup {
 
 	public Long getId() { return id; }
 	public Long getLeaderUserId() { return leader.getId(); }
+	public Long getEventId() { return event == null ? null : event.getId(); }
+	public String getEventTitle() { return event == null ? null : event.getTitle(); }
 	public GroupStatus getStatus() { return status == null ? GroupStatus.RECRUITING : status; }
 	public boolean isRecruiting() { return getStatus() == GroupStatus.RECRUITING; }
 	public String getTitle() { return title; }

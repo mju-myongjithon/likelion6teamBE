@@ -116,6 +116,8 @@ public class GroupController {
 
 	@Schema(name = "GroupRequest", description = "스터디 모임 등록·수정 요청")
 	public record GroupRequest(
+			@Schema(description = "연결할 행사 ID. 행사 기반 모임이 아니면 생략합니다.", example = "1", nullable = true)
+			Long eventId,
 			@Schema(example = "주말 알고리즘 스터디", minLength = 1, maxLength = 100,
 					requiredMode = Schema.RequiredMode.REQUIRED) String title,
 			@Schema(example = "매주 문제를 풀고 풀이를 공유합니다.", minLength = 1, maxLength = 2000,
@@ -131,7 +133,7 @@ public class GroupController {
 					schema = @Schema(implementation = RecruitingRoleRequest.class), maxItems = 20)
 			@NotNull(message = "모집 역할 배열은 필수입니다.") List<RecruitingRoleRequest> recruitingRoles) {
 		GroupService.GroupValues toValues() {
-			return new GroupService.GroupValues(title, description, maxMemberCount, meetingRule, location,
+			return new GroupService.GroupValues(eventId, title, description, maxMemberCount, meetingRule, location,
 					recruitingRoles == null ? null : recruitingRoles.stream().map(RecruitingRoleRequest::toValues).toList());
 		}
 	}
