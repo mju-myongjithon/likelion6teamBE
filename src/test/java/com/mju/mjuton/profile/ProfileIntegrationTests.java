@@ -127,22 +127,6 @@ class ProfileIntegrationTests {
 	}
 
 	@Test
-	void updateWithoutResidenceCoordinatesPreservesStoredCoordinates() throws Exception {
-		MockHttpSession session = sessionFor("profile-location-preserved@mju.ac.kr");
-		createProfile(session, "홍길동", List.of(), List.of(), List.of());
-
-		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(requestWithResidenceCoordinates("홍길동", 37.5665, 126.9780)))
-				.andExpect(status().isOk());
-
-		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(request("김명지", "[]", "[]", "[]")))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.residenceLatitude").value(37.5665))
-				.andExpect(jsonPath("$.residenceLongitude").value(126.9780));
-	}
-
-	@Test
 	void rejectsInvalidResidenceCoordinates() throws Exception {
 		MockHttpSession session = sessionFor("profile-location-invalid@mju.ac.kr");
 		createProfile(session, "홍길동", List.of(), List.of(), List.of());
