@@ -34,7 +34,8 @@ public class ProfileService {
 	public Profile createForSignup(User user, ProfileValues values) {
 		NormalizedValues normalized = normalize(values);
 		Profile profile = new Profile(user, normalized.name(), normalized.schoolName(),
-				normalized.departmentName(), normalized.residenceArea(), normalized.bio(), normalized.avatarUrl());
+				normalized.departmentName(), normalized.residenceArea(), normalized.residenceLatitude(),
+				normalized.residenceLongitude(), normalized.bio(), normalized.avatarUrl());
 		profile.replaceTags(resolveTags(normalized));
 		return profiles.saveAndFlush(profile);
 	}
@@ -54,7 +55,8 @@ public class ProfileService {
 		Profile profile = profiles.findById(userId).orElseThrow(ProfileService::profileNotFound);
 		NormalizedValues normalized = normalize(values);
 		profile.update(normalized.name(), normalized.schoolName(), normalized.departmentName(),
-				normalized.residenceArea(), normalized.bio(), normalized.avatarUrl());
+				normalized.residenceArea(), normalized.residenceLatitude(), normalized.residenceLongitude(),
+				normalized.bio(), normalized.avatarUrl());
 		profile.replaceTags(resolveTags(normalized));
 		return profiles.saveAndFlush(profile);
 	}
@@ -68,11 +70,21 @@ public class ProfileService {
 		String schoolName = required(values.schoolName(), "학교명", 100);
 		String departmentName = required(values.departmentName(), "학과명", 100);
 		String residenceArea = required(values.residenceArea(), "거주 지역", 100);
+		validateResidenceCoordinates(values.residenceLatitude(), values.residenceLongitude());
 		String bio = optional(values.bio(), "자기소개", 500);
 		String avatarUrl = optional(values.avatarUrl(), "프로필 이미지 URL", 2048);
-		return new NormalizedValues(name, schoolName, departmentName, residenceArea, bio, avatarUrl,
-				tagNames(values.interests(), "관심사"), tagNames(values.purposes(), "활동 목적"),
+		return new NormalizedValues(name, schoolName, departmentName, residenceArea, values.residenceLatitude(),
+				values.residenceLongitude(), bio, avatarUrl, tagNames(values.interests(), "관심사"), tagNames(values.purposes(), "활동 목적"),
 				tagNames(values.roles(), "역할"));
+	}
+
+	private void validateResidenceCoordinates(Double latitude, Double longitude) {
+		if (latitude == null && longitude == null) return;
+		if (latitude == null || longitude == null
+				|| !Double.isFinite(latitude) || !Double.isFinite(longitude)
+				|| latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+			throw invalidRequest("거주 지역 좌표가 올바르지 않습니다.");
+		}
 	}
 
 	private String required(String value, String field, int maxLength) {
@@ -133,8 +145,10 @@ public class ProfileService {
 	}
 
 	public record ProfileValues(String name, String schoolName, String departmentName, String residenceArea,
-			String bio, String avatarUrl, List<String> interests, List<String> purposes, List<String> roles) {}
+			Double residenceLatitude, Double residenceLongitude, String bio, String avatarUrl,
+			List<String> interests, List<String> purposes, List<String> roles) {}
 
 	private record NormalizedValues(String name, String schoolName, String departmentName, String residenceArea,
-			String bio, String avatarUrl, List<String> interests, List<String> purposes, List<String> roles) {}
+			Double residenceLatitude, Double residenceLongitude, String bio, String avatarUrl,
+			List<String> interests, List<String> purposes, List<String> roles) {}
 }

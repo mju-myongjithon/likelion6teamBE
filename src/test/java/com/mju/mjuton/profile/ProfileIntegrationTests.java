@@ -110,6 +110,39 @@ class ProfileIntegrationTests {
 	}
 
 	@Test
+	void updatesAndReturnsResidenceCoordinates() throws Exception {
+		MockHttpSession session = sessionFor("profile-location@mju.ac.kr");
+		createProfile(session, "홍길동", List.of(), List.of(), List.of());
+
+		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
+				.content(requestWithResidenceCoordinates("홍길동", 37.5665, 126.9780)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.residenceLatitude").value(37.5665))
+				.andExpect(jsonPath("$.residenceLongitude").value(126.9780));
+
+		mvc.perform(get("/api/profile").session(session))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.residenceLatitude").value(37.5665))
+				.andExpect(jsonPath("$.residenceLongitude").value(126.9780));
+	}
+
+	@Test
+	void rejectsInvalidResidenceCoordinates() throws Exception {
+		MockHttpSession session = sessionFor("profile-location-invalid@mju.ac.kr");
+		createProfile(session, "홍길동", List.of(), List.of(), List.of());
+
+		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
+				.content(requestWithResidenceCoordinates("홍길동", 37.5665, null)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+		mvc.perform(put("/api/profile").session(session).contentType(MediaType.APPLICATION_JSON)
+				.content(requestWithResidenceCoordinates("홍길동", 91.0, 126.9780)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+	}
+
+	@Test
 	void normalizesTagsByType() throws Exception {
 		MockHttpSession session = sessionFor("profile-tags@mju.ac.kr");
 		createProfile(session, "홍길동", List.of("개발"), List.of("개발"), List.of());
@@ -123,7 +156,7 @@ class ProfileIntegrationTests {
 		User first = user("profile-parallel-1@mju.ac.kr");
 		User second = user("profile-parallel-2@mju.ac.kr");
 		ProfileService.ProfileValues values = new ProfileService.ProfileValues("홍길동", "명지대학교",
-				"컴퓨터공학과", "서울", null, null, List.of("동시성"), List.of(), List.of());
+				"컴퓨터공학과", "서울", null, null, null, null, List.of("동시성"), List.of(), List.of());
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
@@ -167,7 +200,7 @@ class ProfileIntegrationTests {
 		long userId = (Long) session.getAttribute(AuthController.SESSION_USER_ID);
 		User user = users.findById(userId).orElseThrow();
 		ProfileService.ProfileValues values = new ProfileService.ProfileValues(name, "명지대학교", "컴퓨터공학과",
-				"서울", "백엔드 개발자", null, interests, purposes, roles);
+				"서울", null, null, "백엔드 개발자", null, interests, purposes, roles);
 		profileWriteLock.execute(() -> profileService.createForSignup(user, values));
 	}
 
@@ -177,6 +210,19 @@ class ProfileIntegrationTests {
 				+ "\"bio\":\"백엔드 개발자\",\"avatarUrl\":null,"
 				+ "\"interests\":" + jsonArray(interests) + ",\"purposes\":" + jsonArray(purposes)
 				+ ",\"roles\":" + jsonArray(roles) + "}";
+	}
+
+	private String requestWithResidenceCoordinates(String name, Double latitude, Double longitude) {
+		return "{\"name\":\"" + name + "\",\"schoolName\":\"명지대학교\","
+				+ "\"departmentName\":\"컴퓨터공학과\",\"residenceArea\":\"서울\","
+				+ "\"residenceLatitude\":" + jsonNumber(latitude)
+				+ ",\"residenceLongitude\":" + jsonNumber(longitude)
+				+ ",\"bio\":\"백엔드 개발자\",\"avatarUrl\":null,"
+				+ "\"interests\":[],\"purposes\":[],\"roles\":[]}";
+	}
+
+	private String jsonNumber(Double value) {
+		return value == null ? "null" : value.toString();
 	}
 
 	private String jsonArray(String compact) {

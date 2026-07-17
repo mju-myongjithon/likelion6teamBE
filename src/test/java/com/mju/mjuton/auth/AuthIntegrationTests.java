@@ -299,7 +299,7 @@ class AuthIntegrationTests {
 	}
 
 	private ProfileService.ProfileValues profileValues(String name) {
-		return new ProfileService.ProfileValues(name, "명지대학교", "컴퓨터공학과", "서울", null, null,
+		return new ProfileService.ProfileValues(name, "명지대학교", "컴퓨터공학과", "서울", null, null, null, null,
 				java.util.List.of("백엔드"), java.util.List.of(), java.util.List.of());
 	}
 

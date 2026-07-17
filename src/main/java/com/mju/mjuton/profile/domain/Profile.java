@@ -34,6 +34,8 @@ public class Profile {
 	private String departmentName;
 	@Column(nullable = false, length = 100)
 	private String residenceArea;
+	private Double residenceLatitude;
+	private Double residenceLongitude;
 	@Column(length = 500)
 	private String bio;
 	@Column(length = 2048)
@@ -50,11 +52,18 @@ public class Profile {
 
 	public Profile(User user, String name, String schoolName, String departmentName,
 			String residenceArea, String bio, String avatarUrl) {
+		this(user, name, schoolName, departmentName, residenceArea, null, null, bio, avatarUrl);
+	}
+
+	public Profile(User user, String name, String schoolName, String departmentName,
+			String residenceArea, Double residenceLatitude, Double residenceLongitude, String bio, String avatarUrl) {
 		this.user = user;
 		this.name = name;
 		this.schoolName = schoolName;
 		this.departmentName = departmentName;
 		this.residenceArea = residenceArea;
+		this.residenceLatitude = residenceLatitude;
+		this.residenceLongitude = residenceLongitude;
 		this.bio = bio;
 		this.avatarUrl = avatarUrl;
 		this.createdAt = Instant.now();
@@ -62,11 +71,13 @@ public class Profile {
 	}
 
 	public void update(String name, String schoolName, String departmentName,
-			String residenceArea, String bio, String avatarUrl) {
+			String residenceArea, Double residenceLatitude, Double residenceLongitude, String bio, String avatarUrl) {
 		this.name = name;
 		this.schoolName = schoolName;
 		this.departmentName = departmentName;
 		this.residenceArea = residenceArea;
+		this.residenceLatitude = residenceLatitude;
+		this.residenceLongitude = residenceLongitude;
 		this.bio = bio;
 		this.avatarUrl = avatarUrl;
 		this.updatedAt = Instant.now();
@@ -84,6 +95,8 @@ public class Profile {
 	public String getSchoolName() { return schoolName; }
 	public String getDepartmentName() { return departmentName; }
 	public String getResidenceArea() { return residenceArea; }
+	public Double getResidenceLatitude() { return residenceLatitude; }
+	public Double getResidenceLongitude() { return residenceLongitude; }
 	public String getBio() { return bio; }
 	public String getAvatarUrl() { return avatarUrl; }
 	public Instant getCreatedAt() { return createdAt; }

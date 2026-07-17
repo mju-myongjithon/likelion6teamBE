@@ -147,7 +147,7 @@ class RecommendationIntegrationTests {
 	private User profileUser(String interest, String purpose, String role) {
 		User user = user("profile");
 		profileService.createForSignup(user, new ProfileValues("추천 사용자", "명지대학교", "컴퓨터공학과",
-				"서울", "AI 서비스를 만들고 싶어요.", null,
+				"서울", null, null, "AI 서비스를 만들고 싶어요.", null,
 				List.of(interest), List.of(purpose), List.of(role)));
 		return user;
 	}
