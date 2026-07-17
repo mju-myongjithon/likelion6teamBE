@@ -1,0 +1,24 @@
+[Unit]
+Description=MJUTON Spring Boot Application
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=mjuton
+Group=mjuton
+WorkingDirectory=/opt/mjuton
+EnvironmentFile=/etc/mjuton/mjuton.env
+Environment=SPRING_PROFILES_ACTIVE=prod
+ExecStartPre=/usr/local/sbin/mjuton-start-preflight
+ExecStart=/usr/bin/java -jar /opt/mjuton/current/mjuton.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30s
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
