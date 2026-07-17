@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
+	@EntityGraph(attributePaths = {"creator", "eventTags.tag"})
 	List<Event> findAllByOrderByCreatedAtDescIdDesc();
 
 	@EntityGraph(attributePaths = "eventTags.tag")

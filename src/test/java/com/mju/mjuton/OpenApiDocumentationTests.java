@@ -72,6 +72,13 @@ class OpenApiDocumentationTests {
 				.andExpect(jsonPath("$.paths['/api/listings'].get.parameters[0].schema.default").value("ALL"))
 				.andExpect(jsonPath("$.paths['/api/listings'].get.parameters[0].schema.enum",
 						hasItems("ALL", "STUDY", "HACKATHON")))
+				.andExpect(jsonPath("$.paths['/api/recommendations'].get.security[0].sessionCookie").isArray())
+				.andExpect(jsonPath("$.paths['/api/recommendations'].get.parameters[0].schema.enum",
+						hasItems("ALL", "STUDY", "HACKATHON")))
+				.andExpect(jsonPath("$.paths['/api/recommendations'].get.parameters[1].schema.default").value(10))
+				.andExpect(jsonPath("$.components.schemas.RecommendationItem.properties.score.type").value("integer"))
+				.andExpect(jsonPath("$.components.schemas.RecommendationItem.properties.mode.enum",
+						hasItems("HYBRID", "RULE_FALLBACK")))
 				.andExpect(jsonPath("$.paths['/api/scraps/groups/{groupId}'].put.security[0].sessionCookie").isArray())
 				.andExpect(jsonPath("$.paths['/api/scraps/groups/{groupId}'].put.responses['204']").exists())
 				.andExpect(jsonPath("$.paths['/api/scraps/groups/{groupId}'].delete.security[0].sessionCookie").isArray())
