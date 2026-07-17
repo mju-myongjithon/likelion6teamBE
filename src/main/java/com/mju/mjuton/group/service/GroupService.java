@@ -7,11 +7,15 @@ import com.mju.mjuton.group.domain.GroupMemberRole;
 import com.mju.mjuton.group.domain.StudyGroup;
 import com.mju.mjuton.group.domain.StudyGroup.RoleValues;
 import com.mju.mjuton.group.repository.GroupMemberRepository;
+import com.mju.mjuton.group.repository.GroupMemberRepository.GroupMemberCount;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,25 +40,33 @@ public class GroupService {
 				normalized.maxMemberCount(), normalized.meetingRule(), normalized.location());
 		group.replaceRoles(normalized.recruitingRoles());
 		group.addInitialMember(leader);
-		return GroupDetail.from(groups.saveAndFlush(group));
+		StudyGroup saved = groups.saveAndFlush(group);
+		return GroupDetail.from(saved, 1);
 	}
 
 	@Transactional(readOnly = true)
 	public List<GroupSummary> findAll() {
-		return groups.findAllByOrderByCreatedAtDescIdDesc().stream().map(GroupSummary::from).toList();
+		List<StudyGroup> found = groups.findAllByOrderByCreatedAtDescIdDesc();
+		Map<Long, GroupMemberCount> counts = memberCounts(found);
+		return found.stream()
+				.map(group -> GroupSummary.from(group, currentMemberCount(group, counts)))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public List<MyGroupResponse> findMine(long userId) {
 		ensureUserExists(userId);
-		return groups.findMyGroups(userId).stream()
-				.map(group -> MyGroupResponse.from(group, userId))
+		List<StudyGroup> found = groups.findMyGroups(userId);
+		Map<Long, GroupMemberCount> counts = memberCounts(found);
+		return found.stream()
+				.map(group -> MyGroupResponse.from(group, userId, currentMemberCount(group, counts)))
 				.toList();
 	}
 
 	@Transactional(readOnly = true)
 	public GroupDetail find(long groupId) {
-		return GroupDetail.from(findGroup(groupId));
+		StudyGroup group = findGroup(groupId);
+		return GroupDetail.from(group, currentMemberCount(group));
 	}
 
 	@Transactional
@@ -63,16 +75,14 @@ public class GroupService {
 		StudyGroup group = findGroup(groupId);
 		ensureLeader(group, userId);
 		NormalizedValues normalized = normalize(values);
-		long memberCount = members.countByGroup_Id(groupId);
-		if (!members.existsByGroup_IdAndUser_Id(groupId, group.getLeaderUserId())) {
-			memberCount++;
-		}
+		long memberCount = currentMemberCount(group);
 		if (normalized.maxMemberCount() < memberCount) {
 			throw invalidRequest("총 정원은 현재 참여자 수보다 작을 수 없습니다.");
 		}
 		group.update(normalized.title(), normalized.description(), normalized.maxMemberCount(),
 				normalized.meetingRule(), normalized.location(), normalized.recruitingRoles());
-		return GroupDetail.from(groups.saveAndFlush(group));
+		StudyGroup saved = groups.saveAndFlush(group);
+		return GroupDetail.from(saved, memberCount);
 	}
 
 	@Transactional
@@ -95,6 +105,23 @@ public class GroupService {
 		if (group.getLeaderUserId() != userId) {
 			throw new ApiException(HttpStatus.FORBIDDEN, "GROUP_FORBIDDEN", "모임 리더만 변경할 수 있습니다.");
 		}
+	}
+
+	private long currentMemberCount(StudyGroup group) {
+		return currentMemberCount(group, memberCounts(List.of(group)));
+	}
+
+	private long currentMemberCount(StudyGroup group, Map<Long, GroupMemberCount> counts) {
+		GroupMemberCount count = counts.get(group.getId());
+		if (count == null) return 1;
+		return count.getStoredMemberCount() + (count.getLeaderRowCount() > 0 ? 0 : 1);
+	}
+
+	private Map<Long, GroupMemberCount> memberCounts(List<StudyGroup> found) {
+		if (found.isEmpty()) return Map.of();
+		List<Long> groupIds = found.stream().map(StudyGroup::getId).toList();
+		return members.countMembersByGroupIds(groupIds).stream()
+				.collect(Collectors.toMap(GroupMemberCount::getGroupId, Function.identity()));
 	}
 
 	private NormalizedValues normalize(GroupValues values) {
@@ -159,22 +186,24 @@ public class GroupService {
 
 	public record GroupSummary(Long groupId, String title, com.mju.mjuton.group.domain.GroupCategory category,
 			com.mju.mjuton.group.domain.GroupStatus status, String location, String meetingRule,
-			int maxMemberCount, java.time.Instant createdAt) {
-		static GroupSummary from(StudyGroup group) {
+			int maxMemberCount, long currentMemberCount, java.time.Instant createdAt) {
+		static GroupSummary from(StudyGroup group, long currentMemberCount) {
 			return new GroupSummary(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
-					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), group.getCreatedAt());
+					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), currentMemberCount,
+					group.getCreatedAt());
 		}
 	}
 
 	public record MyGroupResponse(Long groupId, String title,
 			com.mju.mjuton.group.domain.GroupCategory category,
 			com.mju.mjuton.group.domain.GroupStatus status, String location, String meetingRule,
-			int maxMemberCount, GroupMemberRole role, java.time.Instant createdAt) {
-		static MyGroupResponse from(StudyGroup group, long userId) {
+			int maxMemberCount, long currentMemberCount, GroupMemberRole role, java.time.Instant createdAt) {
+		static MyGroupResponse from(StudyGroup group, long userId, long currentMemberCount) {
 			GroupMemberRole role = group.getLeaderUserId() == userId
 					? GroupMemberRole.LEADER : GroupMemberRole.MEMBER;
 			return new MyGroupResponse(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
-					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), role, group.getCreatedAt());
+					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), currentMemberCount,
+					role, group.getCreatedAt());
 		}
 	}
 
@@ -183,11 +212,12 @@ public class GroupService {
 	public record GroupDetail(Long groupId, Long leaderUserId, String title,
 			com.mju.mjuton.group.domain.GroupCategory category, com.mju.mjuton.group.domain.GroupStatus status,
 			String description, int maxMemberCount, String meetingRule, String location,
-			List<RoleDetail> recruitingRoles, java.time.Instant createdAt, java.time.Instant updatedAt) {
-		static GroupDetail from(StudyGroup group) {
+			long currentMemberCount, List<RoleDetail> recruitingRoles,
+			java.time.Instant createdAt, java.time.Instant updatedAt) {
+		static GroupDetail from(StudyGroup group, long currentMemberCount) {
 			return new GroupDetail(group.getId(), group.getLeaderUserId(), group.getTitle(), group.getCategory(),
 					group.getStatus(), group.getDescription(), group.getMaxMemberCount(), group.getMeetingRule(),
-					group.getLocation(), group.getRecruitingRoles().stream()
+					group.getLocation(), currentMemberCount, group.getRecruitingRoles().stream()
 							.map(role -> new RoleDetail(role.getRole(), role.getSkill())).toList(),
 					group.getCreatedAt(), group.getUpdatedAt());
 		}

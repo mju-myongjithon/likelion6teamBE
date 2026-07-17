@@ -11,6 +11,7 @@ import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.event.repository.EventRepository;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
+import java.sql.Timestamp;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,9 +49,10 @@ class ListingIntegrationTests {
 		long eventId = createEvent(session, "통합 해커톤");
 		Instant latestTime = Instant.parse("2026-07-17T00:00:00Z");
 		Instant olderTime = Instant.parse("2026-07-16T00:00:00Z");
-		jdbc.update("update groups set created_at = ? where group_id in (?, ?)", latestTime, firstGroupId, secondGroupId);
-		jdbc.update("update groups set created_at = ? where group_id = ?", olderTime, olderGroupId);
-		jdbc.update("update events set created_at = ? where event_id = ?", latestTime, eventId);
+		jdbc.update("update groups set created_at = ? where group_id in (?, ?)",
+				Timestamp.from(latestTime), firstGroupId, secondGroupId);
+		jdbc.update("update groups set created_at = ? where group_id = ?", Timestamp.from(olderTime), olderGroupId);
+		jdbc.update("update events set created_at = ? where event_id = ?", Timestamp.from(latestTime), eventId);
 
 		mvc.perform(get("/api/listings"))
 				.andExpect(status().isOk())
@@ -64,6 +66,7 @@ class ListingIntegrationTests {
 				.andExpect(jsonPath("$[0].endsAt").doesNotExist())
 				.andExpect(jsonPath("$[0].relatedUrl").doesNotExist())
 				.andExpect(jsonPath("$[0].tags").doesNotExist())
+				.andExpect(jsonPath("$[0].currentMemberCount").doesNotExist())
 				.andExpect(jsonPath("$[0].matchPercentage").doesNotExist())
 				.andExpect(jsonPath("$[0].scrapped").doesNotExist())
 				.andExpect(jsonPath("$[1].category").value("STUDY"))
@@ -75,6 +78,7 @@ class ListingIntegrationTests {
 				.andExpect(jsonPath("$[1].description").doesNotExist())
 				.andExpect(jsonPath("$[1].leaderUserId").doesNotExist())
 				.andExpect(jsonPath("$[1].recruitingRoles").doesNotExist())
+				.andExpect(jsonPath("$[1].currentMemberCount").value(1))
 				.andExpect(jsonPath("$[1].matchPercentage").doesNotExist())
 				.andExpect(jsonPath("$[1].scrapped").doesNotExist())
 				.andExpect(jsonPath("$[2].groupId").value(firstGroupId))
@@ -99,12 +103,14 @@ class ListingIntegrationTests {
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].category").value("STUDY"))
 				.andExpect(jsonPath("$[0].groupId").value(groupId))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(1))
 				.andExpect(jsonPath("$[0].eventId").doesNotExist());
 		mvc.perform(get("/api/listings").param("filter", "HACKATHON"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].category").value("HACKATHON"))
 				.andExpect(jsonPath("$[0].eventId").value(eventId))
+				.andExpect(jsonPath("$[0].currentMemberCount").doesNotExist())
 				.andExpect(jsonPath("$[0].groupId").doesNotExist());
 		mvc.perform(get("/api/groups/{groupId}", groupId)).andExpect(status().isOk());
 		mvc.perform(get("/api/events/{eventId}", eventId)).andExpect(status().isOk());
@@ -131,7 +137,10 @@ class ListingIntegrationTests {
 				+ "\"maxMemberCount\":8,\"meetingRule\":\"매주 토요일\","
 				+ "\"location\":\"서울\",\"recruitingRoles\":[]}";
 		MvcResult result = mvc.perform(post("/api/groups").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(body)).andExpect(status().isCreated()).andReturn();
+				.content(body))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.currentMemberCount").value(1))
+				.andReturn();
 		return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.groupId")).longValue();
 	}
 

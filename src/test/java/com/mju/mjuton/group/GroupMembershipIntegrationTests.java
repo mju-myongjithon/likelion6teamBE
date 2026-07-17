@@ -60,6 +60,7 @@ class GroupMembershipIntegrationTests {
 		long leaderId = userId(leader);
 		long applicantId = userId(applicant);
 		long groupId = create(leader, 3);
+		assertCurrentMemberCount(groupId, 1);
 
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(leader))
 				.andExpect(status().isOk())
@@ -78,6 +79,15 @@ class GroupMembershipIntegrationTests {
 		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/approve", groupId, applicationId)
 						.session(leader))
 				.andExpect(status().isNoContent());
+		assertCurrentMemberCount(groupId, 2);
+		mvc.perform(get("/api/groups"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].groupId").value(groupId))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(2));
+		mvc.perform(get("/api/listings").param("filter", "STUDY"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].groupId").value(groupId))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(2));
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(applicant))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].role").value("LEADER"))
@@ -94,6 +104,7 @@ class GroupMembershipIntegrationTests {
 		MockHttpSession applicant = sessionFor("state-applicant@mju.ac.kr");
 		long groupId = create(leader, 3);
 		long applicationId = apply(groupId, applicant);
+		assertCurrentMemberCount(groupId, 1);
 
 		mvc.perform(post("/api/groups/{groupId}/applications", groupId).session(applicant))
 				.andExpect(status().isConflict())
@@ -101,6 +112,7 @@ class GroupMembershipIntegrationTests {
 		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/reject", groupId, applicationId)
 						.session(leader))
 				.andExpect(status().isNoContent());
+		assertCurrentMemberCount(groupId, 1);
 		assertThat(apply(groupId, applicant)).isEqualTo(applicationId);
 
 		mvc.perform(post("/api/groups/{groupId}/close", groupId).session(leader))
@@ -118,6 +130,7 @@ class GroupMembershipIntegrationTests {
 		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/approve", groupId, applicationId)
 						.session(leader))
 				.andExpect(status().isNoContent());
+		assertCurrentMemberCount(groupId, 2);
 		mvc.perform(delete("/api/groups/{groupId}", groupId).session(leader))
 				.andExpect(status().isNoContent());
 		assertThat(members.countByGroup_Id(groupId)).isZero();
@@ -155,6 +168,7 @@ class GroupMembershipIntegrationTests {
 		long groupId = create(leader, 3);
 		approve(groupId, apply(groupId, nextLeader), leader);
 		approve(groupId, apply(groupId, member), leader);
+		assertCurrentMemberCount(groupId, 3);
 
 		mvc.perform(post("/api/groups/{groupId}/leave", groupId).session(leader))
 				.andExpect(status().isConflict())
@@ -163,6 +177,7 @@ class GroupMembershipIntegrationTests {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"newLeaderUserId\":" + nextLeaderId + "}"))
 				.andExpect(status().isNoContent());
+		assertCurrentMemberCount(groupId, 3);
 		mvc.perform(get("/api/groups/{groupId}", groupId))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.leaderUserId").value(nextLeaderId));
@@ -174,9 +189,11 @@ class GroupMembershipIntegrationTests {
 
 		mvc.perform(post("/api/groups/{groupId}/leave", groupId).session(leader))
 				.andExpect(status().isNoContent());
+		assertCurrentMemberCount(groupId, 2);
 		mvc.perform(delete("/api/groups/{groupId}/members/{memberUserId}", groupId, memberId)
 						.session(nextLeader))
 				.andExpect(status().isNoContent());
+		assertCurrentMemberCount(groupId, 1);
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(member))
 				.andExpect(status().isForbidden());
 	}
@@ -222,6 +239,7 @@ class GroupMembershipIntegrationTests {
 		StudyGroup group = new StudyGroup(leaderUser, "기존 모임", "기존 데이터", 2, "매주", "서울");
 		group.replaceRoles(List.of());
 		long groupId = groups.saveAndFlush(group).getId();
+		assertCurrentMemberCount(groupId, 1);
 
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(leader))
 				.andExpect(status().isOk())
@@ -229,6 +247,7 @@ class GroupMembershipIntegrationTests {
 				.andExpect(jsonPath("$[0].role").value("LEADER"));
 		approve(groupId, apply(groupId, applicant), leader);
 		assertThat(members.countByGroup_Id(groupId)).isEqualTo(1);
+		assertCurrentMemberCount(groupId, 2);
 
 		mvc.perform(post("/api/groups/{groupId}/transfer-leader", groupId).session(leader)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -331,11 +350,14 @@ class GroupMembershipIntegrationTests {
 				.andExpect(jsonPath("$[0].location").value("강남"))
 				.andExpect(jsonPath("$[0].meetingRule").value("매주 토요일"))
 				.andExpect(jsonPath("$[0].maxMemberCount").value(5))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(1))
+				.andExpect(jsonPath("$[1].currentMemberCount").value(2))
 				.andExpect(jsonPath("$[0].createdAt").isNotEmpty());
 		mvc.perform(get("/api/groups/me").session(member))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].groupId").value(approvedGroupId))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(2))
 				.andExpect(jsonPath("$[0].role").value("MEMBER"));
 		mvc.perform(get("/api/groups/me").session(pending))
 				.andExpect(status().isOk())
@@ -377,6 +399,7 @@ class GroupMembershipIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].groupId").value(legacyGroupId))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(1))
 				.andExpect(jsonPath("$[0].role").value("LEADER"));
 	}
 
@@ -413,6 +436,7 @@ class GroupMembershipIntegrationTests {
 		MvcResult result = mvc.perform(post("/api/groups").session(leader).contentType(MediaType.APPLICATION_JSON)
 						.content(groupRequest(capacity)))
 				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.currentMemberCount").value(1))
 				.andReturn();
 		return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.groupId")).longValue();
 	}
@@ -429,6 +453,12 @@ class GroupMembershipIntegrationTests {
 		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/approve", groupId, applicationId)
 						.session(leader))
 				.andExpect(status().isNoContent());
+	}
+
+	private void assertCurrentMemberCount(long groupId, long expected) throws Exception {
+		mvc.perform(get("/api/groups/{groupId}", groupId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.currentMemberCount").value(expected));
 	}
 
 	private MockHttpSession sessionFor(String email) {

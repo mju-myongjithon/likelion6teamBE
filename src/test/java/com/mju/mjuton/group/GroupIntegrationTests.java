@@ -48,6 +48,7 @@ class GroupIntegrationTests {
 				.andExpect(jsonPath("$.category").value("STUDY"))
 				.andExpect(jsonPath("$.status").value("RECRUITING"))
 				.andExpect(jsonPath("$.maxMemberCount").value(8))
+				.andExpect(jsonPath("$.currentMemberCount").value(1))
 				.andExpect(jsonPath("$.recruitingRoles[0].role").value("프론트엔드"))
 				.andExpect(jsonPath("$.recruitingRoles[0].skill").value("React"))
 				.andExpect(jsonPath("$.recruitingRoles[1].role").value("백엔드"))
@@ -58,6 +59,7 @@ class GroupIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.title").value("수정된 스터디"))
 				.andExpect(jsonPath("$.maxMemberCount").value(10))
+				.andExpect(jsonPath("$.currentMemberCount").value(1))
 				.andExpect(jsonPath("$.recruitingRoles").isEmpty());
 
 		mvc.perform(delete("/api/groups/{groupId}", groupId).session(leader))
@@ -79,6 +81,7 @@ class GroupIntegrationTests {
 				.andExpect(jsonPath("$[0].title").value("두 번째"))
 				.andExpect(jsonPath("$[0].category").value("STUDY"))
 				.andExpect(jsonPath("$[0].status").value("RECRUITING"))
+				.andExpect(jsonPath("$[0].currentMemberCount").value(1))
 				.andExpect(jsonPath("$[0].description").doesNotExist())
 				.andExpect(jsonPath("$[0].leaderUserId").doesNotExist())
 				.andExpect(jsonPath("$[1].groupId").value(firstId));
@@ -139,7 +142,10 @@ class GroupIntegrationTests {
 
 	private long create(MockHttpSession session, String content) throws Exception {
 		MvcResult result = mvc.perform(post("/api/groups").session(session).contentType(MediaType.APPLICATION_JSON)
-				.content(content)).andExpect(status().isCreated()).andReturn();
+				.content(content))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.currentMemberCount").value(1))
+				.andReturn();
 		Number groupId = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.groupId");
 		return groupId.longValue();
 	}
