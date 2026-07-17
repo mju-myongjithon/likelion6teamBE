@@ -48,6 +48,9 @@ public class StudyGroup {
 	private Instant createdAt;
 	@Column(nullable = false)
 	private Instant updatedAt;
+	/** 이 모임에 1:1로 매달린 채팅방 id. 모임 생성 시 채팅방을 만들어 링크한다(기존 데이터는 백필로 채운다). */
+	@Column(name = "chat_room_id")
+	private Long chatRoomId;
 	@OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("position ASC")
 	private List<RecruitingRole> recruitingRoles = new ArrayList<>();
@@ -70,6 +73,13 @@ public class StudyGroup {
 
 	public void addInitialMember(User user) {
 		this.members.add(new GroupMember(this, user));
+	}
+
+	/** 모임에 채팅방을 연결한다. 이미 연결돼 있으면(백필 재실행 등) 무시한다. */
+	public void linkChatRoom(Long chatRoomId) {
+		if (this.chatRoomId == null) {
+			this.chatRoomId = chatRoomId;
+		}
 	}
 
 	public void closeRecruitment() {
@@ -112,6 +122,7 @@ public class StudyGroup {
 	}
 
 	public Long getId() { return id; }
+	public Long getChatRoomId() { return chatRoomId; }
 	public Long getLeaderUserId() { return leader.getId(); }
 	public GroupStatus getStatus() { return status == null ? GroupStatus.RECRUITING : status; }
 	public boolean isRecruiting() { return getStatus() == GroupStatus.RECRUITING; }

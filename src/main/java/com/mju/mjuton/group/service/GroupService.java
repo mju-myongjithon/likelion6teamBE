@@ -2,6 +2,7 @@ package com.mju.mjuton.group.service;
 
 import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.repository.UserRepository;
+import com.mju.mjuton.chat.service.ChatService;
 import com.mju.mjuton.global.ApiException;
 import com.mju.mjuton.group.domain.GroupMemberRole;
 import com.mju.mjuton.group.domain.StudyGroup;
@@ -25,11 +26,14 @@ public class GroupService {
 	private final StudyGroupRepository groups;
 	private final GroupMemberRepository members;
 	private final UserRepository users;
+	private final ChatService chatService;
 
-	public GroupService(StudyGroupRepository groups, GroupMemberRepository members, UserRepository users) {
+	public GroupService(StudyGroupRepository groups, GroupMemberRepository members, UserRepository users,
+			ChatService chatService) {
 		this.groups = groups;
 		this.members = members;
 		this.users = users;
+		this.chatService = chatService;
 	}
 
 	@Transactional
@@ -40,6 +44,8 @@ public class GroupService {
 				normalized.maxMemberCount(), normalized.meetingRule(), normalized.location());
 		group.replaceRoles(normalized.recruitingRoles());
 		group.addInitialMember(leader);
+		// 모임 전용 채팅방을 함께 만들어 링크한다. 리더는 GroupMember이므로 채팅 접근은 자동으로 열린다.
+		group.linkChatRoom(chatService.createRoom());
 		StudyGroup saved = groups.saveAndFlush(group);
 		return GroupDetail.from(saved, 1);
 	}
@@ -90,7 +96,10 @@ public class GroupService {
 		ensureUserExists(userId);
 		StudyGroup group = findGroup(groupId);
 		ensureLeader(group, userId);
+		Long chatRoomId = group.getChatRoomId();
 		groups.delete(group);
+		// 모임에 매달린 채팅방과 그 메시지/읽음 상태도 함께 정리한다(chatRoomId는 FK가 아니라 cascade 안 됨).
+		chatService.deleteRoom(chatRoomId);
 	}
 
 	private StudyGroup findGroup(long groupId) {

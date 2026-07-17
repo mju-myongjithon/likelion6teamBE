@@ -7,35 +7,34 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import java.time.Instant;
 
+/**
+ * 방-사용자별 읽음 상태. 채팅방 "접근 권한"은 더 이상 여기서 판단하지 않는다(그룹 멤버십이 진실원).
+ * 오직 "이 사용자가 이 방에서 어디까지 읽었는가"(lastReadMessageId)만 기록해 안 읽은 개수 계산에 쓴다.
+ * 행은 사용자가 방을 처음 읽는 시점(markAsRead)에 lazy하게 생성된다.
+ */
 @Entity
-@Table(name = "chat_room_members", uniqueConstraints = @UniqueConstraint(columnNames = {"room_id", "user_id"}))
-public class ChatRoomMember {
+@Table(name = "chat_read_states",
+		uniqueConstraints = @UniqueConstraint(columnNames = {"room_id", "user_id"}))
+public class ChatReadState {
 	@Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "member_id")
+	@Column(name = "read_state_id")
 	private Long id;
 	@Column(name = "room_id", nullable = false)
 	private Long roomId;
 	@Column(name = "user_id", nullable = false)
 	private Long userId;
-	@Column(nullable = false, updatable = false)
-	private Instant joinedAt;
 	@Column(name = "last_read_message_id", nullable = false)
 	private Long lastReadMessageId;
 
-	protected ChatRoomMember() {}
+	protected ChatReadState() {}
 
-	public ChatRoomMember(Long roomId, Long userId) {
+	public ChatReadState(Long roomId, Long userId) {
 		this.roomId = roomId;
 		this.userId = userId;
-		this.joinedAt = Instant.now();
 		this.lastReadMessageId = 0L;
 	}
 
-	public Long getId() { return id; }
-	public Long getRoomId() { return roomId; }
-	public Long getUserId() { return userId; }
 	public Long getLastReadMessageId() { return lastReadMessageId; }
 
 	/** messageId > lastReadMessageId 인 것만 안 읽은 메시지로 취급한다. 역행은 무시한다. */

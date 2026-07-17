@@ -39,8 +39,8 @@ public class ChatChannelInterceptor implements ChannelInterceptor {
 		}
 		if (command == StompCommand.SUBSCRIBE || command == StompCommand.SEND) {
 			Long roomId = extractRoomId(accessor.getDestination());
-			if (roomId != null && !chatService.isMember(roomId, userId)) {
-				throw new MessagingException("채팅방 멤버가 아닙니다.");
+			if (roomId != null && !chatService.canAccess(roomId, userId)) {
+				throw new MessagingException("채팅방에 접근할 권한이 없습니다.");
 			}
 		}
 		return message;

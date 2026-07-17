@@ -13,6 +13,12 @@ import org.springframework.data.repository.query.Param;
 public interface StudyGroupRepository extends JpaRepository<StudyGroup, Long> {
 	List<StudyGroup> findAllByOrderByCreatedAtDescIdDesc();
 
+	/** 채팅 접근 판정: 방 id로 그 방이 속한 모임을 되짚는다. */
+	Optional<StudyGroup> findByChatRoomId(Long chatRoomId);
+
+	/** 기존 데이터 백필: 아직 채팅방이 링크되지 않은 모임들. */
+	List<StudyGroup> findByChatRoomIdIsNull();
+
 	@Query("""
 			select distinct studyGroup
 			from StudyGroup studyGroup
