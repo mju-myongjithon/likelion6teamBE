@@ -66,6 +66,15 @@ public class GroupMembershipService {
 				.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public ApplicationResponse myApplication(long groupId, long applicantUserId) {
+		findUser(applicantUserId);
+		findGroup(groupId);
+		return applications.findByGroup_IdAndApplicant_Id(groupId, applicantUserId)
+				.map(ApplicationResponse::from)
+				.orElseThrow(GroupMembershipService::applicationNotFound);
+	}
+
 	@Transactional
 	public void approve(long groupId, long applicationId, long leaderUserId) {
 		StudyGroup group = lockedGroup(groupId);

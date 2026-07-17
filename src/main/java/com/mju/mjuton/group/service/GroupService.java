@@ -3,6 +3,7 @@ package com.mju.mjuton.group.service;
 import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.global.ApiException;
+import com.mju.mjuton.group.domain.GroupMemberRole;
 import com.mju.mjuton.group.domain.StudyGroup;
 import com.mju.mjuton.group.domain.StudyGroup.RoleValues;
 import com.mju.mjuton.group.repository.GroupMemberRepository;
@@ -41,6 +42,14 @@ public class GroupService {
 	@Transactional(readOnly = true)
 	public List<GroupSummary> findAll() {
 		return groups.findAllByOrderByCreatedAtDescIdDesc().stream().map(GroupSummary::from).toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<MyGroupResponse> findMine(long userId) {
+		ensureUserExists(userId);
+		return groups.findMyGroups(userId).stream()
+				.map(group -> MyGroupResponse.from(group, userId))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -154,6 +163,18 @@ public class GroupService {
 		static GroupSummary from(StudyGroup group) {
 			return new GroupSummary(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
 					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), group.getCreatedAt());
+		}
+	}
+
+	public record MyGroupResponse(Long groupId, String title,
+			com.mju.mjuton.group.domain.GroupCategory category,
+			com.mju.mjuton.group.domain.GroupStatus status, String location, String meetingRule,
+			int maxMemberCount, GroupMemberRole role, java.time.Instant createdAt) {
+		static MyGroupResponse from(StudyGroup group, long userId) {
+			GroupMemberRole role = group.getLeaderUserId() == userId
+					? GroupMemberRole.LEADER : GroupMemberRole.MEMBER;
+			return new MyGroupResponse(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
+					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), role, group.getCreatedAt());
 		}
 	}
 

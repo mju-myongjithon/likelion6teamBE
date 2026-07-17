@@ -30,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -44,6 +45,7 @@ class GroupMembershipIntegrationTests {
 	@Autowired GroupMemberRepository members;
 	@Autowired GroupJoinApplicationRepository applications;
 	@Autowired GroupMembershipService memberships;
+	@Autowired JdbcTemplate jdbcTemplate;
 
 	@BeforeEach
 	void clearGroups() {
@@ -233,6 +235,167 @@ class GroupMembershipIntegrationTests {
 						.content("{\"newLeaderUserId\":" + userId(applicant) + "}"))
 				.andExpect(status().isNoContent());
 		assertThat(members.countByGroup_Id(groupId)).isEqualTo(2);
+	}
+
+	@Test
+	void applicantCanReadOnlyOwnApplicationIncludingDecidedStatus() throws Exception {
+		MockHttpSession leader = sessionFor("my-application-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("my-application-applicant@mju.ac.kr");
+		MockHttpSession other = sessionFor("my-application-other@mju.ac.kr");
+		long groupId = create(leader, 3);
+		long applicationId = apply(groupId, applicant);
+
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.applicationId").value(applicationId))
+				.andExpect(jsonPath("$.groupId").value(groupId))
+				.andExpect(jsonPath("$.applicantUserId").value(userId(applicant)))
+				.andExpect(jsonPath("$.status").value("PENDING"))
+				.andExpect(jsonPath("$.requestedAt").isNotEmpty())
+				.andExpect(jsonPath("$.decidedAt").isEmpty());
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(other))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("GROUP_APPLICATION_NOT_FOUND"));
+
+		approve(groupId, applicationId, leader);
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("APPROVED"))
+				.andExpect(jsonPath("$.decidedAt").isNotEmpty());
+
+		long rejectedGroupId = create(leader, 3);
+		long rejectedApplicationId = apply(rejectedGroupId, other);
+		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/reject",
+						rejectedGroupId, rejectedApplicationId).session(leader))
+				.andExpect(status().isNoContent());
+		mvc.perform(get("/api/groups/{groupId}/applications/me", rejectedGroupId).session(other))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("REJECTED"))
+				.andExpect(jsonPath("$.decidedAt").isNotEmpty());
+	}
+
+	@Test
+	void myApplicationDistinguishesMissingGroupAndApplicationAndRequiresLogin() throws Exception {
+		MockHttpSession leader = sessionFor("my-application-errors-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("my-application-errors-applicant@mju.ac.kr");
+		MockHttpSession invalidUser = new MockHttpSession();
+		invalidUser.setAttribute(AuthController.SESSION_USER_ID, Long.MAX_VALUE);
+		long groupId = create(leader, 2);
+
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(applicant))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("GROUP_APPLICATION_NOT_FOUND"));
+		mvc.perform(get("/api/groups/{groupId}/applications/me", Long.MAX_VALUE).session(applicant))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("GROUP_NOT_FOUND"));
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(invalidUser))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+	}
+
+	@Test
+	void myGroupsContainOnlyLedOrApprovedGroupsWithoutDuplicatesAndUseStableOrdering() throws Exception {
+		MockHttpSession leader = sessionFor("my-groups-leader@mju.ac.kr");
+		MockHttpSession member = sessionFor("my-groups-member@mju.ac.kr");
+		MockHttpSession pending = sessionFor("my-groups-pending@mju.ac.kr");
+		MockHttpSession rejected = sessionFor("my-groups-rejected@mju.ac.kr");
+		MockHttpSession otherLeader = sessionFor("my-groups-other-leader@mju.ac.kr");
+		MockHttpSession ledGroupMember = sessionFor("my-groups-led-member@mju.ac.kr");
+		long firstLedGroupId = create(leader, 5);
+		long secondLedGroupId = create(leader, 5);
+		long approvedGroupId = create(otherLeader, 5);
+		long excludedGroupId = create(otherLeader, 5);
+		approve(firstLedGroupId, apply(firstLedGroupId, ledGroupMember), leader);
+		approve(approvedGroupId, apply(approvedGroupId, member), otherLeader);
+		apply(excludedGroupId, pending);
+		long rejectedApplicationId = apply(excludedGroupId, rejected);
+		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/reject",
+						excludedGroupId, rejectedApplicationId).session(otherLeader))
+				.andExpect(status().isNoContent());
+		jdbcTemplate.update("update groups set created_at = ? where group_id in (?, ?)",
+				java.sql.Timestamp.from(java.time.Instant.parse("2026-07-17T00:00:00Z")),
+				firstLedGroupId, secondLedGroupId);
+
+		mvc.perform(get("/api/groups/me").session(leader))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(2))
+				.andExpect(jsonPath("$[0].groupId").value(secondLedGroupId))
+				.andExpect(jsonPath("$[1].groupId").value(firstLedGroupId))
+				.andExpect(jsonPath("$[0].role").value("LEADER"))
+				.andExpect(jsonPath("$[0].title").value("권한 모델 스터디"))
+				.andExpect(jsonPath("$[0].category").value("STUDY"))
+				.andExpect(jsonPath("$[0].status").value("RECRUITING"))
+				.andExpect(jsonPath("$[0].location").value("강남"))
+				.andExpect(jsonPath("$[0].meetingRule").value("매주 토요일"))
+				.andExpect(jsonPath("$[0].maxMemberCount").value(5))
+				.andExpect(jsonPath("$[0].createdAt").isNotEmpty());
+		mvc.perform(get("/api/groups/me").session(member))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].groupId").value(approvedGroupId))
+				.andExpect(jsonPath("$[0].role").value("MEMBER"));
+		mvc.perform(get("/api/groups/me").session(pending))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+		mvc.perform(get("/api/groups/me").session(rejected))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+	}
+
+	@Test
+	void myGroupsCalculateRoleAfterTransferAndSupportLegacyLeaderWithoutMemberRow() throws Exception {
+		MockHttpSession leader = sessionFor("my-groups-transfer-leader@mju.ac.kr");
+		MockHttpSession nextLeader = sessionFor("my-groups-transfer-next@mju.ac.kr");
+		long groupId = create(leader, 3);
+		approve(groupId, apply(groupId, nextLeader), leader);
+		mvc.perform(post("/api/groups/{groupId}/transfer-leader", groupId).session(leader)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"newLeaderUserId\":" + userId(nextLeader) + "}"))
+				.andExpect(status().isNoContent());
+
+		mvc.perform(get("/api/groups/me").session(leader))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].groupId").value(groupId))
+				.andExpect(jsonPath("$[0].role").value("MEMBER"));
+		mvc.perform(get("/api/groups/me").session(nextLeader))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].groupId").value(groupId))
+				.andExpect(jsonPath("$[0].role").value("LEADER"));
+
+		MockHttpSession legacyLeader = sessionFor("my-groups-legacy-leader@mju.ac.kr");
+		User legacyLeaderUser = users.findById(userId(legacyLeader)).orElseThrow();
+		StudyGroup legacyGroup = new StudyGroup(legacyLeaderUser, "레거시 모임", "기존 데이터",
+				2, "매주", "서울");
+		legacyGroup.replaceRoles(List.of());
+		long legacyGroupId = groups.saveAndFlush(legacyGroup).getId();
+		assertThat(members.existsByGroup_IdAndUser_Id(legacyGroupId, userId(legacyLeader))).isFalse();
+
+		mvc.perform(get("/api/groups/me").session(legacyLeader))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].groupId").value(legacyGroupId))
+				.andExpect(jsonPath("$[0].role").value("LEADER"));
+	}
+
+	@Test
+	void myGroupsReturnsEmptyArrayAndRequiresLogin() throws Exception {
+		MockHttpSession user = sessionFor("my-groups-empty@mju.ac.kr");
+		MockHttpSession invalidUser = new MockHttpSession();
+		invalidUser.setAttribute(AuthController.SESSION_USER_ID, Long.MAX_VALUE);
+
+		mvc.perform(get("/api/groups/me").session(user))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$").isArray())
+				.andExpect(jsonPath("$").isEmpty());
+		mvc.perform(get("/api/groups/me"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+		mvc.perform(get("/api/groups/me").session(invalidUser))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
 	}
 
 	private String approveConcurrently(CountDownLatch start, long groupId, long applicationId, long leaderId)
