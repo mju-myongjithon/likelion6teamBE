@@ -2,6 +2,8 @@ package com.mju.mjuton.group.service;
 
 import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.repository.UserRepository;
+import com.mju.mjuton.event.domain.Event;
+import com.mju.mjuton.event.repository.EventRepository;
 import com.mju.mjuton.global.ApiException;
 import com.mju.mjuton.group.domain.GroupMemberRole;
 import com.mju.mjuton.group.domain.StudyGroup;
@@ -25,18 +27,22 @@ public class GroupService {
 	private final StudyGroupRepository groups;
 	private final GroupMemberRepository members;
 	private final UserRepository users;
+	private final EventRepository events;
 
-	public GroupService(StudyGroupRepository groups, GroupMemberRepository members, UserRepository users) {
+	public GroupService(StudyGroupRepository groups, GroupMemberRepository members, UserRepository users,
+			EventRepository events) {
 		this.groups = groups;
 		this.members = members;
 		this.users = users;
+		this.events = events;
 	}
 
 	@Transactional
 	public GroupDetail create(long userId, GroupValues values) {
 		User leader = users.findById(userId).orElseThrow(GroupService::authenticationRequired);
 		NormalizedValues normalized = normalize(values);
-		StudyGroup group = new StudyGroup(leader, normalized.title(), normalized.description(),
+		Event event = findEventIfPresent(normalized.eventId());
+		StudyGroup group = new StudyGroup(leader, event, normalized.title(), normalized.description(),
 				normalized.maxMemberCount(), normalized.meetingRule(), normalized.location());
 		group.replaceRoles(normalized.recruitingRoles());
 		group.addInitialMember(leader);
@@ -47,6 +53,16 @@ public class GroupService {
 	@Transactional(readOnly = true)
 	public List<GroupSummary> findAll() {
 		List<StudyGroup> found = groups.findAllByOrderByCreatedAtDescIdDesc();
+		Map<Long, GroupMemberCount> counts = memberCounts(found);
+		return found.stream()
+				.map(group -> GroupSummary.from(group, currentMemberCount(group, counts)))
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public List<GroupSummary> findByEvent(long eventId) {
+		if (!events.existsById(eventId)) throw eventNotFound();
+		List<StudyGroup> found = groups.findByEventIdOrderByCreatedAtDescIdDesc(eventId);
 		Map<Long, GroupMemberCount> counts = memberCounts(found);
 		return found.stream()
 				.map(group -> GroupSummary.from(group, currentMemberCount(group, counts)))
@@ -75,12 +91,14 @@ public class GroupService {
 		StudyGroup group = findGroup(groupId);
 		ensureLeader(group, userId);
 		NormalizedValues normalized = normalize(values);
+		Event event = findEventIfPresent(normalized.eventId());
 		long memberCount = currentMemberCount(group);
 		if (normalized.maxMemberCount() < memberCount) {
 			throw invalidRequest("총 정원은 현재 참여자 수보다 작을 수 없습니다.");
 		}
 		group.update(normalized.title(), normalized.description(), normalized.maxMemberCount(),
 				normalized.meetingRule(), normalized.location(), normalized.recruitingRoles());
+		group.linkEvent(event);
 		StudyGroup saved = groups.saveAndFlush(group);
 		return GroupDetail.from(saved, memberCount);
 	}
@@ -95,6 +113,11 @@ public class GroupService {
 
 	private StudyGroup findGroup(long groupId) {
 		return groups.findWithRecruitingRolesById(groupId).orElseThrow(GroupService::groupNotFound);
+	}
+
+	private Event findEventIfPresent(Long eventId) {
+		if (eventId == null) return null;
+		return events.findById(eventId).orElseThrow(GroupService::eventNotFound);
 	}
 
 	private void ensureUserExists(long userId) {
@@ -134,7 +157,8 @@ public class GroupService {
 		String meetingRule = required(values.meetingRule(), "모임 규칙", 1000);
 		String location = required(values.location(), "모임 장소", 200);
 		List<RoleValues> roles = roles(values.recruitingRoles());
-		return new NormalizedValues(title, description, values.maxMemberCount(), meetingRule, location, roles);
+		return new NormalizedValues(values.eventId(), title, description, values.maxMemberCount(), meetingRule,
+				location, roles);
 	}
 
 	private List<RoleValues> roles(List<RoleValues> values) {
@@ -178,30 +202,37 @@ public class GroupService {
 		return new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "모임이 존재하지 않습니다.");
 	}
 
-	public record GroupValues(String title, String description, Integer maxMemberCount, String meetingRule,
+	private static ApiException eventNotFound() {
+		return new ApiException(HttpStatus.NOT_FOUND, "EVENT_NOT_FOUND", "행사가 존재하지 않습니다.");
+	}
+
+	public record GroupValues(Long eventId, String title, String description, Integer maxMemberCount, String meetingRule,
 			String location, List<RoleValues> recruitingRoles) {}
 
-	private record NormalizedValues(String title, String description, int maxMemberCount, String meetingRule,
+	private record NormalizedValues(Long eventId, String title, String description, int maxMemberCount, String meetingRule,
 			String location, List<RoleValues> recruitingRoles) {}
 
-	public record GroupSummary(Long groupId, String title, com.mju.mjuton.group.domain.GroupCategory category,
+	public record GroupSummary(Long groupId, Long eventId, String eventTitle, String title,
+			com.mju.mjuton.group.domain.GroupCategory category,
 			com.mju.mjuton.group.domain.GroupStatus status, String location, String meetingRule,
 			int maxMemberCount, long currentMemberCount, java.time.Instant createdAt) {
 		static GroupSummary from(StudyGroup group, long currentMemberCount) {
-			return new GroupSummary(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
+			return new GroupSummary(group.getId(), group.getEventId(), group.getEventTitle(), group.getTitle(),
+					group.getCategory(), group.getStatus(),
 					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), currentMemberCount,
 					group.getCreatedAt());
 		}
 	}
 
-	public record MyGroupResponse(Long groupId, String title,
+	public record MyGroupResponse(Long groupId, Long eventId, String eventTitle, String title,
 			com.mju.mjuton.group.domain.GroupCategory category,
 			com.mju.mjuton.group.domain.GroupStatus status, String location, String meetingRule,
 			int maxMemberCount, long currentMemberCount, GroupMemberRole role, java.time.Instant createdAt) {
 		static MyGroupResponse from(StudyGroup group, long userId, long currentMemberCount) {
 			GroupMemberRole role = group.getLeaderUserId() == userId
 					? GroupMemberRole.LEADER : GroupMemberRole.MEMBER;
-			return new MyGroupResponse(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
+			return new MyGroupResponse(group.getId(), group.getEventId(), group.getEventTitle(), group.getTitle(),
+					group.getCategory(), group.getStatus(),
 					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), currentMemberCount,
 					role, group.getCreatedAt());
 		}
@@ -209,13 +240,14 @@ public class GroupService {
 
 	public record RoleDetail(String role, String skill) {}
 
-	public record GroupDetail(Long groupId, Long leaderUserId, String title,
+	public record GroupDetail(Long groupId, Long leaderUserId, Long eventId, String eventTitle, String title,
 			com.mju.mjuton.group.domain.GroupCategory category, com.mju.mjuton.group.domain.GroupStatus status,
 			String description, int maxMemberCount, String meetingRule, String location,
 			long currentMemberCount, List<RoleDetail> recruitingRoles,
 			java.time.Instant createdAt, java.time.Instant updatedAt) {
 		static GroupDetail from(StudyGroup group, long currentMemberCount) {
-			return new GroupDetail(group.getId(), group.getLeaderUserId(), group.getTitle(), group.getCategory(),
+			return new GroupDetail(group.getId(), group.getLeaderUserId(), group.getEventId(), group.getEventTitle(),
+					group.getTitle(), group.getCategory(),
 					group.getStatus(), group.getDescription(), group.getMaxMemberCount(), group.getMeetingRule(),
 					group.getLocation(), currentMemberCount, group.getRecruitingRoles().stream()
 							.map(role -> new RoleDetail(role.getRole(), role.getSkill())).toList(),

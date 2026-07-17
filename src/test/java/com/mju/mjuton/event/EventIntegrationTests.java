@@ -13,6 +13,7 @@ import com.mju.mjuton.auth.controller.AuthController;
 import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.event.repository.EventRepository;
+import com.mju.mjuton.group.repository.StudyGroupRepository;
 import com.mju.mjuton.profile.domain.TagType;
 import com.mju.mjuton.profile.repository.TagRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,10 +33,12 @@ class EventIntegrationTests {
 	@Autowired MockMvc mvc;
 	@Autowired UserRepository users;
 	@Autowired EventRepository events;
+	@Autowired StudyGroupRepository groups;
 	@Autowired TagRepository tags;
 
 	@BeforeEach
 	void clearEvents() {
+		groups.deleteAll();
 		events.deleteAll();
 	}
 
@@ -93,6 +96,27 @@ class EventIntegrationTests {
 				.andExpect(jsonPath("$[0].creatorUserId").doesNotExist())
 				.andExpect(jsonPath("$[0].tags").doesNotExist())
 				.andExpect(jsonPath("$[1].eventId").value(firstId));
+	}
+
+	@Test
+	void eventCanListLinkedGroupsCreatedFromSelectedEvent() throws Exception {
+		MockHttpSession creator = sessionFor("event-groups@mju.ac.kr");
+		long eventId = create(creator, validRequest());
+
+		MvcResult result = mvc.perform(post("/api/groups").session(creator).contentType(MediaType.APPLICATION_JSON)
+				.content(groupRequest(eventId, "해커톤 백엔드 팀")))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.eventId").value(eventId))
+				.andExpect(jsonPath("$.eventTitle").value("테스트 행사"))
+				.andReturn();
+		Number groupId = JsonPath.read(result.getResponse().getContentAsString(), "$.groupId");
+
+		mvc.perform(get("/api/events/{eventId}/groups", eventId))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].groupId").value(groupId.longValue()))
+				.andExpect(jsonPath("$[0].eventId").value(eventId))
+				.andExpect(jsonPath("$[0].eventTitle").value("테스트 행사"))
+				.andExpect(jsonPath("$[0].title").value("해커톤 백엔드 팀"));
 	}
 
 	@Test
@@ -186,5 +210,11 @@ class EventIntegrationTests {
 				+ "\"startsAt\":\"" + startsAt + "\",\"endsAt\":\"" + endsAt + "\","
 				+ "\"location\":\"서울\",\"relatedUrl\":\"https://example.com/events/test\",\"tags\":"
 				+ tags + "}";
+	}
+
+	private String groupRequest(long eventId, String title) {
+		return "{\"eventId\":" + eventId + ",\"title\":\"" + title + "\",\"description\":\"팀원을 모집합니다.\","
+				+ "\"maxMemberCount\":4,\"meetingRule\":\"온라인 회의\",\"location\":\"명지대\","
+				+ "\"recruitingRoles\":[{\"role\":\"백엔드\",\"skill\":\"Spring\"}]}";
 	}
 }

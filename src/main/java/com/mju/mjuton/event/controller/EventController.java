@@ -7,6 +7,8 @@ import com.mju.mjuton.event.service.EventService.EventSummary;
 import com.mju.mjuton.global.ApiException;
 import com.mju.mjuton.global.ApiExceptionHandler.ErrorResponse;
 import com.mju.mjuton.global.OpenApiConfig;
+import com.mju.mjuton.group.service.GroupService;
+import com.mju.mjuton.group.service.GroupService.GroupSummary;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -38,9 +40,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "해커톤·행사", description = "내부 신청 기능 없이 행사 정보를 등록·조회·수정·삭제합니다.")
 public class EventController {
 	private final EventService eventService;
+	private final GroupService groupService;
 
-	public EventController(EventService eventService) {
+	public EventController(EventService eventService, GroupService groupService) {
 		this.eventService = eventService;
+		this.groupService = groupService;
 	}
 
 	@PostMapping
@@ -68,6 +72,17 @@ public class EventController {
 	@ApiResponse(responseCode = "404", description = "행사 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
 	EventDetail find(@PathVariable long eventId) {
 		return eventService.find(eventId);
+	}
+
+	@GetMapping("/{eventId}/groups")
+	@Operation(summary = "행사 연결 모임 목록 조회", description = "해당 행사를 선택해 생성된 모임 목록을 최신순으로 조회합니다.")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "행사 연결 모임 목록 조회 성공",
+					content = @Content(array = @ArraySchema(schema = @Schema(implementation = GroupSummary.class)))),
+			@ApiResponse(responseCode = "404", description = "행사 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+	})
+	List<GroupSummary> findGroups(@PathVariable long eventId) {
+		return groupService.findByEvent(eventId);
 	}
 
 	@PutMapping("/{eventId}")

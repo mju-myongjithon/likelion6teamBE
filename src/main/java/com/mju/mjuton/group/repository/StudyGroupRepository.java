@@ -7,11 +7,24 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface StudyGroupRepository extends JpaRepository<StudyGroup, Long> {
 	List<StudyGroup> findAllByOrderByCreatedAtDescIdDesc();
+
+	@Query("""
+			select studyGroup
+			from StudyGroup studyGroup
+			where studyGroup.event.id = :eventId
+			order by studyGroup.createdAt desc, studyGroup.id desc
+			""")
+	List<StudyGroup> findByEventIdOrderByCreatedAtDescIdDesc(@Param("eventId") Long eventId);
+
+	@Modifying
+	@Query("update StudyGroup studyGroup set studyGroup.event = null where studyGroup.event.id = :eventId")
+	int unlinkEvent(@Param("eventId") Long eventId);
 
 	@Query("""
 			select distinct studyGroup

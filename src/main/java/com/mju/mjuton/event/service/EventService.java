@@ -6,6 +6,7 @@ import com.mju.mjuton.event.domain.Event;
 import com.mju.mjuton.event.domain.EventCategory;
 import com.mju.mjuton.event.repository.EventRepository;
 import com.mju.mjuton.global.ApiException;
+import com.mju.mjuton.group.repository.StudyGroupRepository;
 import com.mju.mjuton.profile.domain.Tag;
 import com.mju.mjuton.profile.domain.TagType;
 import com.mju.mjuton.profile.repository.TagRepository;
@@ -24,13 +25,15 @@ public class EventService {
 	private final EventRepository events;
 	private final TagRepository tags;
 	private final UserRepository users;
+	private final StudyGroupRepository groups;
 	private final EventWriteLock eventWriteLock;
 
 	public EventService(EventRepository events, TagRepository tags, UserRepository users,
-			EventWriteLock eventWriteLock) {
+			StudyGroupRepository groups, EventWriteLock eventWriteLock) {
 		this.events = events;
 		this.tags = tags;
 		this.users = users;
+		this.groups = groups;
 		this.eventWriteLock = eventWriteLock;
 	}
 
@@ -78,6 +81,7 @@ public class EventService {
 		ensureUserExists(userId);
 		Event event = findEvent(eventId);
 		ensureCreator(event, userId);
+		groups.unlinkEvent(eventId);
 		events.delete(event);
 	}
 

@@ -53,6 +53,8 @@ public class AuthController {
 			@ApiResponse(responseCode = "409", description = "이미 가입된 이메일",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
 			@ApiResponse(responseCode = "429", description = "1분 이내 재발송 요청",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+			@ApiResponse(responseCode = "503", description = "메일 발송 실패",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
 	})
 	ResponseEntity<Void> sendVerification(@Valid @RequestBody EmailRequest request) {
