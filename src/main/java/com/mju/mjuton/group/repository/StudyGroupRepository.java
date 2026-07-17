@@ -43,4 +43,8 @@ public interface StudyGroupRepository extends JpaRepository<StudyGroup, Long> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select studyGroup from StudyGroup studyGroup where studyGroup.id = :id")
 	Optional<StudyGroup> findByIdForUpdate(@Param("id") Long id);
+
+	@Lock(LockModeType.PESSIMISTIC_READ)
+	@Query("select studyGroup from StudyGroup studyGroup where studyGroup.id = :id")
+	Optional<StudyGroup> findByIdForRead(@Param("id") Long id);
 }

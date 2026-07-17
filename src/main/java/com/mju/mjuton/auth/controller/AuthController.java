@@ -3,6 +3,7 @@ package com.mju.mjuton.auth.controller;
 import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.service.AuthService;
 import com.mju.mjuton.auth.service.SignupService;
+import com.mju.mjuton.chat.config.ChatWebSocketSessionRegistry;
 import com.mju.mjuton.global.ApiException;
 import com.mju.mjuton.global.ApiExceptionHandler.ErrorResponse;
 import com.mju.mjuton.global.OpenApiConfig;
@@ -37,10 +38,13 @@ public class AuthController {
 	public static final String SESSION_USER_ID = "userId";
 	private final AuthService authService;
 	private final SignupService signupService;
+	private final ChatWebSocketSessionRegistry chatSessions;
 
-	public AuthController(AuthService authService, SignupService signupService) {
+	public AuthController(AuthService authService, SignupService signupService,
+			ChatWebSocketSessionRegistry chatSessions) {
 		this.authService = authService;
 		this.signupService = signupService;
+		this.chatSessions = chatSessions;
 	}
 
 	@PostMapping("/email-verifications")
@@ -103,7 +107,10 @@ public class AuthController {
 	@ApiResponse(responseCode = "204", description = "로그아웃 처리 완료")
 	ResponseEntity<Void> logout(@Parameter(hidden = true) HttpServletRequest request) {
 		HttpSession session = request.getSession(false);
-		if (session != null) session.invalidate();
+		if (session != null) {
+			chatSessions.closeByHttpSessionId(session.getId());
+			session.invalidate();
+		}
 		return ResponseEntity.noContent().build();
 	}
 
@@ -126,7 +133,10 @@ public class AuthController {
 
 	private void startNewSession(HttpServletRequest request, Long userId) {
 		HttpSession oldSession = request.getSession(false);
-		if (oldSession != null) oldSession.invalidate();
+		if (oldSession != null) {
+			chatSessions.closeByHttpSessionId(oldSession.getId());
+			oldSession.invalidate();
+		}
 		request.getSession(true).setAttribute(SESSION_USER_ID, userId);
 	}
 
