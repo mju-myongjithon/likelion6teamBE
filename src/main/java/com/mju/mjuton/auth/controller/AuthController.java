@@ -153,6 +153,10 @@ public class AuthController {
 					requiredMode = Schema.RequiredMode.REQUIRED) String departmentName,
 			@Schema(description = "거주 지역", example = "서울", minLength = 1, maxLength = 100,
 					requiredMode = Schema.RequiredMode.REQUIRED) String residenceArea,
+			@Schema(description = "거주 지역 대표 위도. 시군구/동 단위 대표 좌표를 저장합니다.", example = "37.5665",
+					nullable = true) Double residenceLatitude,
+			@Schema(description = "거주 지역 대표 경도. 시군구/동 단위 대표 좌표를 저장합니다.", example = "126.9780",
+					nullable = true) Double residenceLongitude,
 			@Schema(description = "자기소개. null은 허용하지만 빈 문자열은 허용하지 않습니다.", example = "백엔드 개발자입니다.", maxLength = 500)
 			String bio,
 			@Schema(description = "프로필 이미지 URL. 파일 업로드는 제공하지 않습니다.", example = "https://example.com/avatar.png", maxLength = 2048)
@@ -167,8 +171,8 @@ public class AuthController {
 					schema = @Schema(minLength = 1, maxLength = 50), maxItems = 20, uniqueItems = true)
 			@NotNull(message = "역할 태그 배열은 필수입니다.") List<String> roles) {
 		ProfileService.ProfileValues toValues() {
-			return new ProfileService.ProfileValues(name, schoolName, departmentName, residenceArea, bio, avatarUrl,
-					interests, purposes, roles);
+			return new ProfileService.ProfileValues(name, schoolName, departmentName, residenceArea,
+					residenceLatitude, residenceLongitude, bio, avatarUrl, interests, purposes, roles);
 		}
 	}
 	@Schema(name = "LoginRequest", description = "로그인 요청")
