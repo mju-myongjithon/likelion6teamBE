@@ -1,10 +1,13 @@
 package com.mju.mjuton.cafe.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mju.mjuton.global.ApiException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.HttpHeaders;
@@ -20,10 +23,12 @@ class KakaoCafeSearchClient implements CafeSearchClient {
 	private static final int MIN_SIZE = 1;
 	private static final int MAX_SIZE = 15;
 	private final RestClient restClient;
+	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final String apiKey;
 	private final int radiusMeters;
 	private final int size;
 
+	@Autowired
 	KakaoCafeSearchClient(@Value("${mjuton.cafe-search.kakao-api-key}") String apiKey,
 			@Value("${mjuton.cafe-search.radius-meters}") int radiusMeters,
 			@Value("${mjuton.cafe-search.size}") int size) {
@@ -31,6 +36,14 @@ class KakaoCafeSearchClient implements CafeSearchClient {
 		requestFactory.setConnectTimeout(Duration.ofSeconds(2));
 		requestFactory.setReadTimeout(Duration.ofSeconds(3));
 		this.restClient = RestClient.builder().requestFactory(requestFactory).build();
+		this.apiKey = apiKey == null ? "" : apiKey.trim();
+		validateConfig(radiusMeters, size);
+		this.radiusMeters = radiusMeters;
+		this.size = size;
+	}
+
+	KakaoCafeSearchClient(RestClient restClient, String apiKey, int radiusMeters, int size) {
+		this.restClient = restClient;
 		this.apiKey = apiKey == null ? "" : apiKey.trim();
 		validateConfig(radiusMeters, size);
 		this.radiusMeters = radiusMeters;
@@ -53,7 +66,7 @@ class KakaoCafeSearchClient implements CafeSearchClient {
 					"카페 검색 API 키가 설정되어 있지 않습니다.");
 		}
 		try {
-			JsonNode response = restClient.get()
+			String responseBody = restClient.get()
 					.uri(uriBuilder -> uriBuilder
 							.scheme("https")
 							.host("dapi.kakao.com")
@@ -66,9 +79,10 @@ class KakaoCafeSearchClient implements CafeSearchClient {
 							.build())
 					.header(HttpHeaders.AUTHORIZATION, "KakaoAK " + apiKey)
 					.retrieve()
-					.body(JsonNode.class);
+					.body(String.class);
+			JsonNode response = responseBody == null ? null : objectMapper.readTree(responseBody);
 			return parseDocuments(response);
-		} catch (RestClientException exception) {
+		} catch (RestClientException | JsonProcessingException exception) {
 			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "CAFE_SEARCH_FAILED",
 					"외부 카페 검색 API 호출에 실패했습니다.");
 		}
