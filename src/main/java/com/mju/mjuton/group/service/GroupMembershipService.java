@@ -10,10 +10,21 @@ import com.mju.mjuton.group.domain.GroupMemberRole;
 import com.mju.mjuton.group.domain.StudyGroup;
 import com.mju.mjuton.group.repository.GroupJoinApplicationRepository;
 import com.mju.mjuton.group.repository.GroupMemberRepository;
+import com.mju.mjuton.group.repository.GroupMemberRepository.GroupMemberCount;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
+import com.mju.mjuton.profile.domain.Profile;
+import com.mju.mjuton.profile.repository.ProfileRepository;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,13 +35,15 @@ public class GroupMembershipService {
 	private final GroupMemberRepository members;
 	private final GroupJoinApplicationRepository applications;
 	private final UserRepository users;
+	private final ProfileRepository profiles;
 
 	public GroupMembershipService(StudyGroupRepository groups, GroupMemberRepository members,
-			GroupJoinApplicationRepository applications, UserRepository users) {
+			GroupJoinApplicationRepository applications, UserRepository users, ProfileRepository profiles) {
 		this.groups = groups;
 		this.members = members;
 		this.applications = applications;
 		this.users = users;
+		this.profiles = profiles;
 	}
 
 	@Transactional
@@ -73,6 +86,44 @@ public class GroupMembershipService {
 		return applications.findByGroup_IdAndApplicant_Id(groupId, applicantUserId)
 				.map(ApplicationResponse::from)
 				.orElseThrow(GroupMembershipService::applicationNotFound);
+	}
+
+	@Transactional(readOnly = true)
+	public MyApplicationPageResponse myApplications(long applicantUserId,
+			GroupJoinApplicationStatus status, int page, int size) {
+		findUser(applicantUserId);
+		validatePage(page, size);
+		PageRequest pageable = PageRequest.of(page, size,
+				Sort.by(Sort.Order.desc("requestedAt"), Sort.Order.desc("id")));
+		Page<GroupJoinApplication> found = status == null
+				? applications.findByApplicant_Id(applicantUserId, pageable)
+				: applications.findByApplicant_IdAndStatus(applicantUserId, status, pageable);
+		List<GroupJoinApplication> content = found.getContent();
+		List<Long> groupIds = content.stream().map(GroupJoinApplication::getGroupId).toList();
+		Map<Long, GroupMemberCount> counts = memberCounts(groupIds);
+		Set<Long> memberGroupIds = groupIds.isEmpty() ? Set.of()
+				: Set.copyOf(members.findGroupIdsByUserIdAndGroupIds(applicantUserId, groupIds));
+		Map<Long, Profile> leaderProfiles = leaderProfiles(content);
+		List<MyApplicationResponse> responses = content.stream()
+				.map(application -> MyApplicationResponse.from(application,
+						isCurrentMember(application.getGroup(), applicantUserId, memberGroupIds),
+						currentMemberCount(application.getGroup(), counts),
+						leaderProfiles.get(application.getGroup().getLeaderUserId())))
+				.toList();
+		return new MyApplicationPageResponse(responses, found.getNumber(), found.getSize(),
+				found.getTotalElements(), found.getTotalPages(), found.isFirst(), found.isLast());
+	}
+
+	@Transactional
+	public void cancel(long applicationId, long applicantUserId) {
+		findUser(applicantUserId);
+		GroupJoinApplication application = applications.findByIdForUpdate(applicationId)
+				.filter(found -> found.getApplicantUserId() == applicantUserId)
+				.orElseThrow(GroupMembershipService::applicationNotFound);
+		if (!application.isPending()) {
+			throw conflict("APPLICATION_ALREADY_DECIDED", "이미 처리된 참가 신청입니다.");
+		}
+		application.cancel();
 	}
 
 	@Transactional
@@ -206,9 +257,48 @@ public class GroupMembershipService {
 				|| members.existsByGroup_IdAndUser_Id(group.getId(), userId);
 	}
 
+	private boolean isCurrentMember(StudyGroup group, long userId, Set<Long> memberGroupIds) {
+		return group.getLeaderUserId() == userId || memberGroupIds.contains(group.getId());
+	}
+
 	private long memberCount(StudyGroup group) {
 		long count = members.countByGroup_Id(group.getId());
 		return members.existsByGroup_IdAndUser_Id(group.getId(), group.getLeaderUserId()) ? count : count + 1;
+	}
+
+	private Map<Long, GroupMemberCount> memberCounts(List<Long> groupIds) {
+		if (groupIds.isEmpty()) return Map.of();
+		return members.countMembersByGroupIds(groupIds).stream()
+				.collect(Collectors.toMap(GroupMemberCount::getGroupId, Function.identity()));
+	}
+
+	private long currentMemberCount(StudyGroup group, Map<Long, GroupMemberCount> counts) {
+		GroupMemberCount count = counts.get(group.getId());
+		if (count == null) return 1;
+		return count.getStoredMemberCount() + (count.getLeaderRowCount() > 0 ? 0 : 1);
+	}
+
+	private Map<Long, Profile> leaderProfiles(List<GroupJoinApplication> found) {
+		List<Long> leaderIds = found.stream()
+				.map(application -> application.getGroup().getLeaderUserId())
+				.distinct()
+				.toList();
+		if (leaderIds.isEmpty()) return Map.of();
+		return profiles.findAllById(leaderIds).stream()
+				.collect(Collectors.toMap(Profile::getUserId, Function.identity()));
+	}
+
+	private void validatePage(int page, int size) {
+		if (page < 0) {
+			throw invalidRequest("page는 0 이상이어야 합니다.");
+		}
+		if (size < 1 || size > 100) {
+			throw invalidRequest("size는 1~100이어야 합니다.");
+		}
+	}
+
+	private static ApiException invalidRequest(String message) {
+		return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message);
 	}
 
 	private static ApiException conflict(String code, String message) {
@@ -237,6 +327,38 @@ public class GroupMembershipService {
 			return new ApplicationResponse(application.getId(), application.getGroupId(),
 					application.getApplicantUserId(), application.getStatus(), application.getRequestedAt(),
 					application.getDecidedAt());
+		}
+	}
+
+	public record MyApplicationPageResponse(List<MyApplicationResponse> content, int page, int size,
+			long totalElements, int totalPages, boolean first, boolean last) {}
+
+	public record MyApplicationResponse(Long applicationId, GroupJoinApplicationStatus status,
+			Instant requestedAt, Instant decidedAt, boolean isCurrentMember,
+			ApplicationGroupSummary group) {
+		static MyApplicationResponse from(GroupJoinApplication application, boolean isCurrentMember,
+				long currentMemberCount, Profile leaderProfile) {
+			StudyGroup group = application.getGroup();
+			return new MyApplicationResponse(application.getId(), application.getStatus(),
+					application.getRequestedAt(), application.getDecidedAt(), isCurrentMember,
+					ApplicationGroupSummary.from(group, currentMemberCount, leaderProfile));
+		}
+	}
+
+	public record ApplicationGroupSummary(Long groupId, String title, Long leaderUserId,
+			@Schema(nullable = true, description = "리더 프로필 이름. 프로필이 없으면 null")
+			String leaderName,
+			@Schema(nullable = true, description = "리더 프로필 이미지 URL. 프로필 또는 이미지가 없으면 null")
+			String leaderAvatarUrl,
+			com.mju.mjuton.group.domain.GroupCategory category,
+			com.mju.mjuton.group.domain.GroupStatus groupStatus,
+			String meetingRule, String location, long currentMemberCount, int maxMemberCount) {
+		static ApplicationGroupSummary from(StudyGroup group, long currentMemberCount, Profile leaderProfile) {
+			String leaderName = leaderProfile == null ? null : leaderProfile.getName();
+			String leaderAvatarUrl = leaderProfile == null ? null : leaderProfile.getAvatarUrl();
+			return new ApplicationGroupSummary(group.getId(), group.getTitle(), group.getLeaderUserId(),
+					leaderName, leaderAvatarUrl, group.getCategory(), group.getStatus(), group.getMeetingRule(),
+					group.getLocation(), currentMemberCount, group.getMaxMemberCount());
 		}
 	}
 

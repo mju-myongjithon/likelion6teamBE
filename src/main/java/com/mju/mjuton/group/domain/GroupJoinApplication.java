@@ -9,6 +9,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -17,7 +18,9 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "group_join_applications",
-		uniqueConstraints = @UniqueConstraint(columnNames = {"group_id", "applicant_user_id"}))
+		uniqueConstraints = @UniqueConstraint(columnNames = {"group_id", "applicant_user_id"}),
+		indexes = @Index(name = "idx_group_applications_applicant_requested",
+				columnList = "applicant_user_id, requested_at, group_join_application_id"))
 public class GroupJoinApplication {
 	@Id @GeneratedValue(strategy = GenerationType.IDENTITY)
 	@Column(name = "group_join_application_id")
@@ -61,9 +64,15 @@ public class GroupJoinApplication {
 		this.decidedAt = Instant.now();
 	}
 
+	public void cancel() {
+		this.status = GroupJoinApplicationStatus.CANCELLED;
+		this.decidedAt = Instant.now();
+	}
+
 	public boolean isPending() { return status == GroupJoinApplicationStatus.PENDING; }
 	public Long getId() { return id; }
 	public Long getGroupId() { return group.getId(); }
+	public StudyGroup getGroup() { return group; }
 	public Long getApplicantUserId() { return applicant.getId(); }
 	public User getApplicant() { return applicant; }
 	public GroupJoinApplicationStatus getStatus() { return status; }

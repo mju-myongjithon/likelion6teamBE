@@ -14,6 +14,14 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
 	long countByGroup_Id(Long groupId);
 
 	@Query("""
+			select member.group.id
+			from GroupMember member
+			where member.user.id = :userId and member.group.id in :groupIds
+			""")
+	List<Long> findGroupIdsByUserIdAndGroupIds(
+			@Param("userId") Long userId, @Param("groupIds") List<Long> groupIds);
+
+	@Query("""
 			select studyGroup.id as groupId,
 					count(member.id) as storedMemberCount,
 					coalesce(sum(case when member.user.id = studyGroup.leader.id then 1L else 0L end), 0L)

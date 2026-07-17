@@ -19,6 +19,8 @@ import com.mju.mjuton.group.repository.GroupJoinApplicationRepository;
 import com.mju.mjuton.group.repository.GroupMemberRepository;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
 import com.mju.mjuton.group.service.GroupMembershipService;
+import com.mju.mjuton.profile.domain.Profile;
+import com.mju.mjuton.profile.repository.ProfileRepository;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -45,6 +47,7 @@ class GroupMembershipIntegrationTests {
 	@Autowired GroupMemberRepository members;
 	@Autowired GroupJoinApplicationRepository applications;
 	@Autowired GroupMembershipService memberships;
+	@Autowired ProfileRepository profiles;
 	@Autowired JdbcTemplate jdbcTemplate;
 
 	@BeforeEach
@@ -232,6 +235,41 @@ class GroupMembershipIntegrationTests {
 	}
 
 	@Test
+	void concurrentApprovalAndCancellationLeaveOneConsistentResult() throws Exception {
+		MockHttpSession leader = sessionFor("approval-cancel-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("approval-cancel-applicant@mju.ac.kr");
+		long leaderId = userId(leader);
+		long applicantId = userId(applicant);
+		long groupId = create(leader, 3);
+		long applicationId = apply(groupId, applicant);
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<String> approvalResult = executor.submit(
+					() -> approveConcurrently(start, groupId, applicationId, leaderId));
+			Future<String> cancellationResult = executor.submit(
+					() -> cancelConcurrently(start, applicationId, applicantId));
+			start.countDown();
+
+			List<String> results = List.of(approvalResult.get(), cancellationResult.get());
+			GroupJoinApplicationStatus finalStatus = applications.findById(applicationId)
+					.orElseThrow()
+					.getStatus();
+			if (finalStatus == GroupJoinApplicationStatus.APPROVED) {
+				assertThat(results).containsExactlyInAnyOrder("APPROVED", "APPLICATION_ALREADY_DECIDED");
+				assertThat(members.existsByGroup_IdAndUser_Id(groupId, applicantId)).isTrue();
+			} else {
+				assertThat(finalStatus).isEqualTo(GroupJoinApplicationStatus.CANCELLED);
+				assertThat(results).containsExactlyInAnyOrder("CANCELLED", "APPLICATION_ALREADY_DECIDED");
+				assertThat(members.existsByGroup_IdAndUser_Id(groupId, applicantId)).isFalse();
+			}
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
 	void existingGroupWithoutMemberRowStillTreatsCreatorAsLeader() throws Exception {
 		MockHttpSession leader = sessionFor("legacy-leader@mju.ac.kr");
 		MockHttpSession applicant = sessionFor("legacy-applicant@mju.ac.kr");
@@ -311,6 +349,201 @@ class GroupMembershipIntegrationTests {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
 		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(invalidUser))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+	}
+
+	@Test
+	void myApplicationHistorySupportsSummaryStatusFilterPaginationAndStableOrdering() throws Exception {
+		MockHttpSession leader = sessionFor("application-history-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("application-history-applicant@mju.ac.kr");
+		MockHttpSession other = sessionFor("application-history-other@mju.ac.kr");
+		saveProfile(leader, "신청 목록 리더", "https://example.com/leader.png");
+		long pendingGroupId = create(leader, 5);
+		long approvedGroupId = create(leader, 5);
+		long rejectedGroupId = create(leader, 5);
+		long cancelledGroupId = create(leader, 5);
+		long pendingId = apply(pendingGroupId, applicant);
+		long approvedId = apply(approvedGroupId, applicant);
+		long rejectedId = apply(rejectedGroupId, applicant);
+		long cancelledId = apply(cancelledGroupId, applicant);
+		approve(approvedGroupId, approvedId, leader);
+		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/reject",
+						rejectedGroupId, rejectedId).session(leader))
+				.andExpect(status().isNoContent());
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", cancelledId).session(applicant))
+				.andExpect(status().isNoContent());
+		long otherGroupId = create(leader, 5);
+		apply(otherGroupId, other);
+		java.sql.Timestamp sameRequestedAt = java.sql.Timestamp.from(
+				java.time.Instant.parse("2026-07-17T00:00:00Z"));
+		jdbcTemplate.update("""
+				update group_join_applications
+				set requested_at = ?
+				where group_join_application_id in (?, ?, ?, ?)
+				""", sameRequestedAt, pendingId, approvedId, rejectedId, cancelledId);
+
+		mvc.perform(get("/api/group-applications/me").session(applicant)
+						.param("page", "0").param("size", "2"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(2))
+				.andExpect(jsonPath("$.content[0].applicationId").value(cancelledId))
+				.andExpect(jsonPath("$.content[1].applicationId").value(rejectedId))
+				.andExpect(jsonPath("$.page").value(0))
+				.andExpect(jsonPath("$.size").value(2))
+				.andExpect(jsonPath("$.totalElements").value(4))
+				.andExpect(jsonPath("$.totalPages").value(2))
+				.andExpect(jsonPath("$.first").value(true))
+				.andExpect(jsonPath("$.last").value(false));
+
+		mvc.perform(get("/api/group-applications/me").session(applicant)
+						.param("status", "APPROVED"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].applicationId").value(approvedId))
+				.andExpect(jsonPath("$.content[0].status").value("APPROVED"))
+				.andExpect(jsonPath("$.content[0].isCurrentMember").value(true))
+				.andExpect(jsonPath("$.content[0].group.groupId").value(approvedGroupId))
+				.andExpect(jsonPath("$.content[0].group.title").value("권한 모델 스터디"))
+				.andExpect(jsonPath("$.content[0].group.leaderUserId").value(userId(leader)))
+				.andExpect(jsonPath("$.content[0].group.leaderName").value("신청 목록 리더"))
+				.andExpect(jsonPath("$.content[0].group.leaderAvatarUrl")
+						.value("https://example.com/leader.png"))
+				.andExpect(jsonPath("$.content[0].group.category").value("STUDY"))
+				.andExpect(jsonPath("$.content[0].group.groupStatus").value("RECRUITING"))
+				.andExpect(jsonPath("$.content[0].group.meetingRule").value("매주 토요일"))
+				.andExpect(jsonPath("$.content[0].group.location").value("강남"))
+				.andExpect(jsonPath("$.content[0].group.currentMemberCount").value(2))
+				.andExpect(jsonPath("$.content[0].group.maxMemberCount").value(5));
+
+		mvc.perform(get("/api/group-applications/me").session(applicant)
+						.param("status", "CANCELLED"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].applicationId").value(cancelledId))
+				.andExpect(jsonPath("$.content[0].status").value("CANCELLED"))
+				.andExpect(jsonPath("$.content[0].decidedAt").isNotEmpty())
+				.andExpect(jsonPath("$.content[0].isCurrentMember").value(false));
+	}
+
+	@Test
+	void myApplicationHistoryReturnsEmptyPageAndAllowsMissingLeaderProfile() throws Exception {
+		MockHttpSession leader = sessionFor("application-profileless-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("application-profileless-applicant@mju.ac.kr");
+		MockHttpSession emptyUser = sessionFor("application-history-empty@mju.ac.kr");
+		long groupId = create(leader, 3);
+		apply(groupId, applicant);
+
+		mvc.perform(get("/api/group-applications/me").session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content.length()").value(1))
+				.andExpect(jsonPath("$.content[0].group.leaderName").isEmpty())
+				.andExpect(jsonPath("$.content[0].group.leaderAvatarUrl").isEmpty());
+		mvc.perform(get("/api/group-applications/me").session(emptyUser))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content").isEmpty())
+				.andExpect(jsonPath("$.totalElements").value(0))
+				.andExpect(jsonPath("$.totalPages").value(0))
+				.andExpect(jsonPath("$.first").value(true))
+				.andExpect(jsonPath("$.last").value(true));
+	}
+
+	@Test
+	void approvedApplicationRemainsApprovedButCurrentMembershipReflectsLeave() throws Exception {
+		MockHttpSession leader = sessionFor("application-member-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("application-member-applicant@mju.ac.kr");
+		long groupId = create(leader, 3);
+		approve(groupId, apply(groupId, applicant), leader);
+
+		mvc.perform(get("/api/group-applications/me").session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].status").value("APPROVED"))
+				.andExpect(jsonPath("$.content[0].isCurrentMember").value(true));
+		mvc.perform(post("/api/groups/{groupId}/leave", groupId).session(applicant))
+				.andExpect(status().isNoContent());
+		mvc.perform(get("/api/group-applications/me").session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].status").value("APPROVED"))
+				.andExpect(jsonPath("$.content[0].isCurrentMember").value(false))
+				.andExpect(jsonPath("$.content[0].group.currentMemberCount").value(1));
+	}
+
+	@Test
+	void applicantCancelsOnlyOwnPendingApplicationAndReappliesWithSameId() throws Exception {
+		MockHttpSession leader = sessionFor("application-cancel-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("application-cancel-applicant@mju.ac.kr");
+		MockHttpSession other = sessionFor("application-cancel-other@mju.ac.kr");
+		long groupId = create(leader, 3);
+		long applicationId = apply(groupId, applicant);
+
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", applicationId).session(other))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("GROUP_APPLICATION_NOT_FOUND"));
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", applicationId).session(applicant))
+				.andExpect(status().isNoContent());
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.applicationId").value(applicationId))
+				.andExpect(jsonPath("$.status").value("CANCELLED"))
+				.andExpect(jsonPath("$.decidedAt").isNotEmpty());
+		mvc.perform(get("/api/groups/{groupId}/applications", groupId).session(leader))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", applicationId).session(applicant))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPLICATION_ALREADY_DECIDED"));
+
+		assertThat(apply(groupId, applicant)).isEqualTo(applicationId);
+		mvc.perform(get("/api/groups/{groupId}/applications/me", groupId).session(applicant))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("PENDING"))
+				.andExpect(jsonPath("$.decidedAt").isEmpty());
+		mvc.perform(post("/api/groups/{groupId}/applications/{applicationId}/reject",
+						groupId, applicationId).session(leader))
+				.andExpect(status().isNoContent());
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", applicationId).session(applicant))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPLICATION_ALREADY_DECIDED"));
+	}
+
+	@Test
+	void applicationHistoryValidatesAuthenticationFilterPageAndCancellationState() throws Exception {
+		MockHttpSession leader = sessionFor("application-errors-leader@mju.ac.kr");
+		MockHttpSession applicant = sessionFor("application-errors-applicant@mju.ac.kr");
+		MockHttpSession invalidUser = new MockHttpSession();
+		invalidUser.setAttribute(AuthController.SESSION_USER_ID, Long.MAX_VALUE);
+		long groupId = create(leader, 3);
+		long applicationId = apply(groupId, applicant);
+		approve(groupId, applicationId, leader);
+
+		mvc.perform(get("/api/group-applications/me"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+		mvc.perform(get("/api/group-applications/me").session(invalidUser))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+		mvc.perform(get("/api/group-applications/me").session(applicant).param("status", "UNKNOWN"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(get("/api/group-applications/me").session(applicant).param("page", "-1"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(get("/api/group-applications/me").session(applicant).param("size", "0"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(get("/api/group-applications/me").session(applicant).param("size", "101"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(get("/api/group-applications/me").session(applicant).param("page", "not-a-number"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", applicationId).session(applicant))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("APPLICATION_ALREADY_DECIDED"));
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", Long.MAX_VALUE).session(applicant))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("GROUP_APPLICATION_NOT_FOUND"));
+		mvc.perform(post("/api/group-applications/{applicationId}/cancel", applicationId).session(invalidUser))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
 	}
@@ -432,6 +665,17 @@ class GroupMembershipIntegrationTests {
 		}
 	}
 
+	private String cancelConcurrently(CountDownLatch start, long applicationId, long applicantId)
+			throws InterruptedException {
+		start.await();
+		try {
+			memberships.cancel(applicationId, applicantId);
+			return "CANCELLED";
+		} catch (ApiException exception) {
+			return exception.getCode();
+		}
+	}
+
 	private long create(MockHttpSession leader, int capacity) throws Exception {
 		MvcResult result = mvc.perform(post("/api/groups").session(leader).contentType(MediaType.APPLICATION_JSON)
 						.content(groupRequest(capacity)))
@@ -470,6 +714,12 @@ class GroupMembershipIntegrationTests {
 
 	private long userId(MockHttpSession session) {
 		return (Long) session.getAttribute(AuthController.SESSION_USER_ID);
+	}
+
+	private void saveProfile(MockHttpSession session, String name, String avatarUrl) {
+		User user = users.findById(userId(session)).orElseThrow();
+		profiles.saveAndFlush(new Profile(user, name, "명지대학교", "컴퓨터공학과",
+				"서울", null, avatarUrl));
 	}
 
 	private String groupRequest(int capacity) {
