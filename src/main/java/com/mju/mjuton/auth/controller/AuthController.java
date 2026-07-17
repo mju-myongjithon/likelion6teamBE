@@ -66,6 +66,19 @@ public class AuthController {
 		return ResponseEntity.status(HttpStatus.CREATED).build();
 	}
 
+	@PostMapping("/email-verifications/verify")
+	@Operation(summary = "학교 이메일 인증번호 확인",
+			description = "발송된 인증번호의 유효성을 확인합니다. 인증번호는 회원가입이 완료될 때 소비됩니다.")
+	@ApiResponses({
+			@ApiResponse(responseCode = "204", description = "인증번호 확인 성공"),
+			@ApiResponse(responseCode = "400", description = "인증번호 불일치·만료 또는 학교 이메일 형식 오류",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+	})
+	ResponseEntity<Void> verifyCode(@Valid @RequestBody EmailVerificationConfirmRequest request) {
+		authService.verifyCode(request.email(), request.verificationCode());
+		return ResponseEntity.noContent().build();
+	}
+
 	@PostMapping("/signup")
 	@Operation(summary = "회원가입",
 			description = "인증번호를 검증하고 사용자와 프로필을 하나의 트랜잭션으로 생성한 뒤 새 JSESSIONID를 발급합니다.")
@@ -144,6 +157,12 @@ public class AuthController {
 	public record EmailRequest(
 			@Schema(description = "mju.ac.kr 학교 이메일", example = "student@mju.ac.kr")
 			@NotBlank(message = "이메일은 필수입니다.") String email) {}
+	@Schema(name = "EmailVerificationConfirmRequest", description = "학교 이메일 인증번호 확인 요청")
+	public record EmailVerificationConfirmRequest(
+			@Schema(description = "인증번호를 받은 mju.ac.kr 학교 이메일", example = "student@mju.ac.kr")
+			@NotBlank(message = "이메일은 필수입니다.") String email,
+			@Schema(description = "이메일로 받은 6자리 인증번호", example = "123456", pattern = "\\d{6}")
+			@NotBlank(message = "인증번호는 필수입니다.") String verificationCode) {}
 	@Schema(name = "SignupRequest", description = "인증 정보와 프로필을 포함한 회원가입 요청")
 	public record SignupRequest(
 			@Schema(description = "인증받은 mju.ac.kr 학교 이메일", example = "student@mju.ac.kr")

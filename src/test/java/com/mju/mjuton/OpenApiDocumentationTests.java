@@ -26,6 +26,7 @@ class OpenApiDocumentationTests {
 				.andExpect(jsonPath("$.info.title").value("CampusLink API"))
 				.andExpect(jsonPath("$.paths['/api/health'].get").exists())
 				.andExpect(jsonPath("$.paths['/api/auth/email-verifications'].post").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/email-verifications/verify'].post").exists())
 				.andExpect(jsonPath("$.paths['/api/auth/signup'].post").exists())
 				.andExpect(jsonPath("$.paths['/api/auth/login'].post").exists())
 				.andExpect(jsonPath("$.paths['/api/auth/login'].post.security").doesNotExist())
