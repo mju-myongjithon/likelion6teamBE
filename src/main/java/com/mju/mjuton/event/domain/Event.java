@@ -2,6 +2,7 @@ package com.mju.mjuton.event.domain;
 
 import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.profile.domain.Tag;
+import com.mju.mjuton.scrap.domain.EventScrap;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -50,6 +51,8 @@ public class Event {
 	@OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("position ASC")
 	private List<EventTag> eventTags = new ArrayList<>();
+	@OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+	private List<EventScrap> scraps = new ArrayList<>();
 
 	protected Event() {}
 

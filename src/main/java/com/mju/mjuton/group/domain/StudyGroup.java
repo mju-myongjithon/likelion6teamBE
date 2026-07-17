@@ -1,6 +1,7 @@
 package com.mju.mjuton.group.domain;
 
 import com.mju.mjuton.auth.domain.User;
+import com.mju.mjuton.scrap.domain.GroupScrap;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -55,6 +56,8 @@ public class StudyGroup {
 	private List<GroupMember> members = new ArrayList<>();
 	@OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<GroupJoinApplication> joinApplications = new ArrayList<>();
+	@OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
+	private List<GroupScrap> scraps = new ArrayList<>();
 
 	protected StudyGroup() {}
 
