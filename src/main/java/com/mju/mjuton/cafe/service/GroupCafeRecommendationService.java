@@ -55,12 +55,12 @@ public class GroupCafeRecommendationService {
 		List<Long> userIds = memberUserIds(group);
 		Map<Long, Profile> profileByUserId = profiles.findAllById(userIds).stream()
 				.collect(Collectors.toMap(Profile::getUserId, Function.identity()));
-git add src/main/java/com/mju/mjuton/cafe/service/Kakaogit add src/main/java/com/mju/mjuton/profile/service/ProfileService.java
-		git add src/test/java/com/mju/mjuton/cafe/List<UserLocation> locations = new ArrayList<>();roup
+		List<UserLocation> locations = new ArrayList<>();
 		for (Long userId : userIds) {
 			Profile profile = profileByUserId.get(userId);
 			if (profile == null || profile.getResidenceLatitude() == null || profile.getResidenceLongitude() == null) {
-				continue;
+				throw new ApiException(HttpStatus.BAD_REQUEST, "GROUP_MEMBER_LOCATION_REQUIRED",
+						"모든 모임 참여자의 거주 지역 좌표가 필요합니다.");
 			}
 			locations.add(new UserLocation(userId, profile.getResidenceLatitude(), profile.getResidenceLongitude()));
 		}

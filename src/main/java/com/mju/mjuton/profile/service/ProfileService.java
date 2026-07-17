@@ -54,14 +54,8 @@ public class ProfileService {
 		ensureUserExists(userId);
 		Profile profile = profiles.findById(userId).orElseThrow(ProfileService::profileNotFound);
 		NormalizedValues normalized = normalize(values);
-		Double residenceLatitude = normalized.residenceLatitude();
-		Double residenceLongitude = normalized.residenceLongitude();
-		if (residenceLatitude == null && residenceLongitude == null) {
-			residenceLatitude = profile.getResidenceLatitude();
-			residenceLongitude = profile.getResidenceLongitude();
-		}
 		profile.update(normalized.name(), normalized.schoolName(), normalized.departmentName(),
-				normalized.residenceArea(), residenceLatitude, residenceLongitude,
+				normalized.residenceArea(), normalized.residenceLatitude(), normalized.residenceLongitude(),
 				normalized.bio(), normalized.avatarUrl());
 		profile.replaceTags(resolveTags(normalized));
 		return profiles.saveAndFlush(profile);
