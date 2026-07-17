@@ -5,6 +5,7 @@ import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.global.ApiException;
 import com.mju.mjuton.group.domain.StudyGroup;
 import com.mju.mjuton.group.domain.StudyGroup.RoleValues;
+import com.mju.mjuton.group.repository.GroupMemberRepository;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -17,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class GroupService {
 	private final StudyGroupRepository groups;
+	private final GroupMemberRepository members;
 	private final UserRepository users;
 
-	public GroupService(StudyGroupRepository groups, UserRepository users) {
+	public GroupService(StudyGroupRepository groups, GroupMemberRepository members, UserRepository users) {
 		this.groups = groups;
+		this.members = members;
 		this.users = users;
 	}
 
@@ -31,6 +34,7 @@ public class GroupService {
 		StudyGroup group = new StudyGroup(leader, normalized.title(), normalized.description(),
 				normalized.maxMemberCount(), normalized.meetingRule(), normalized.location());
 		group.replaceRoles(normalized.recruitingRoles());
+		group.addInitialMember(leader);
 		return GroupDetail.from(groups.saveAndFlush(group));
 	}
 
@@ -50,6 +54,13 @@ public class GroupService {
 		StudyGroup group = findGroup(groupId);
 		ensureLeader(group, userId);
 		NormalizedValues normalized = normalize(values);
+		long memberCount = members.countByGroup_Id(groupId);
+		if (!members.existsByGroup_IdAndUser_Id(groupId, group.getLeaderUserId())) {
+			memberCount++;
+		}
+		if (normalized.maxMemberCount() < memberCount) {
+			throw invalidRequest("총 정원은 현재 참여자 수보다 작을 수 없습니다.");
+		}
 		group.update(normalized.title(), normalized.description(), normalized.maxMemberCount(),
 				normalized.meetingRule(), normalized.location(), normalized.recruitingRoles());
 		return GroupDetail.from(groups.saveAndFlush(group));
@@ -138,23 +149,25 @@ public class GroupService {
 			String location, List<RoleValues> recruitingRoles) {}
 
 	public record GroupSummary(Long groupId, String title, com.mju.mjuton.group.domain.GroupCategory category,
-			String location, String meetingRule, int maxMemberCount, java.time.Instant createdAt) {
+			com.mju.mjuton.group.domain.GroupStatus status, String location, String meetingRule,
+			int maxMemberCount, java.time.Instant createdAt) {
 		static GroupSummary from(StudyGroup group) {
-			return new GroupSummary(group.getId(), group.getTitle(), group.getCategory(), group.getLocation(),
-					group.getMeetingRule(), group.getMaxMemberCount(), group.getCreatedAt());
+			return new GroupSummary(group.getId(), group.getTitle(), group.getCategory(), group.getStatus(),
+					group.getLocation(), group.getMeetingRule(), group.getMaxMemberCount(), group.getCreatedAt());
 		}
 	}
 
 	public record RoleDetail(String role, String skill) {}
 
 	public record GroupDetail(Long groupId, Long leaderUserId, String title,
-			com.mju.mjuton.group.domain.GroupCategory category, String description, int maxMemberCount,
-			String meetingRule, String location, List<RoleDetail> recruitingRoles, java.time.Instant createdAt,
-			java.time.Instant updatedAt) {
+			com.mju.mjuton.group.domain.GroupCategory category, com.mju.mjuton.group.domain.GroupStatus status,
+			String description, int maxMemberCount, String meetingRule, String location,
+			List<RoleDetail> recruitingRoles, java.time.Instant createdAt, java.time.Instant updatedAt) {
 		static GroupDetail from(StudyGroup group) {
 			return new GroupDetail(group.getId(), group.getLeaderUserId(), group.getTitle(), group.getCategory(),
-					group.getDescription(), group.getMaxMemberCount(), group.getMeetingRule(), group.getLocation(),
-					group.getRecruitingRoles().stream().map(role -> new RoleDetail(role.getRole(), role.getSkill())).toList(),
+					group.getStatus(), group.getDescription(), group.getMaxMemberCount(), group.getMeetingRule(),
+					group.getLocation(), group.getRecruitingRoles().stream()
+							.map(role -> new RoleDetail(role.getRole(), role.getSkill())).toList(),
 					group.getCreatedAt(), group.getUpdatedAt());
 		}
 	}

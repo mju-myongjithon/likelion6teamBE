@@ -46,6 +46,7 @@ class GroupIntegrationTests {
 				.andExpect(jsonPath("$.leaderUserId").value(leaderId))
 				.andExpect(jsonPath("$.title").value("알고리즘 스터디"))
 				.andExpect(jsonPath("$.category").value("STUDY"))
+				.andExpect(jsonPath("$.status").value("RECRUITING"))
 				.andExpect(jsonPath("$.maxMemberCount").value(8))
 				.andExpect(jsonPath("$.recruitingRoles[0].role").value("프론트엔드"))
 				.andExpect(jsonPath("$.recruitingRoles[0].skill").value("React"))
@@ -77,6 +78,7 @@ class GroupIntegrationTests {
 				.andExpect(jsonPath("$[0].groupId").value(secondId))
 				.andExpect(jsonPath("$[0].title").value("두 번째"))
 				.andExpect(jsonPath("$[0].category").value("STUDY"))
+				.andExpect(jsonPath("$[0].status").value("RECRUITING"))
 				.andExpect(jsonPath("$[0].description").doesNotExist())
 				.andExpect(jsonPath("$[0].leaderUserId").doesNotExist())
 				.andExpect(jsonPath("$[1].groupId").value(firstId));
