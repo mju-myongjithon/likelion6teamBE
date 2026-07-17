@@ -25,6 +25,18 @@ public interface GroupJoinApplicationRepository extends JpaRepository<GroupJoinA
 	Page<GroupJoinApplication> findByApplicant_IdAndStatus(
 			Long applicantId, GroupJoinApplicationStatus status, Pageable pageable);
 
+	@Query("""
+			select application.group.id
+			from GroupJoinApplication application
+			where application.applicant.id = :applicantId
+					and application.status = :status
+					and application.group.id in :groupIds
+			""")
+	List<Long> findGroupIdsByApplicantIdAndStatusAndGroupIds(
+			@Param("applicantId") Long applicantId,
+			@Param("status") GroupJoinApplicationStatus status,
+			@Param("groupIds") List<Long> groupIds);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select application from GroupJoinApplication application where application.id = :id")
 	Optional<GroupJoinApplication> findByIdForUpdate(@Param("id") Long id);

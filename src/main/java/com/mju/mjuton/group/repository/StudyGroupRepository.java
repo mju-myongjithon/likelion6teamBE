@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface StudyGroupRepository extends JpaRepository<StudyGroup, Long> {
+	@EntityGraph(attributePaths = {"leader", "recruitingRoles"})
 	List<StudyGroup> findAllByOrderByCreatedAtDescIdDesc();
 
 	@Query("""
