@@ -1,6 +1,7 @@
 package com.mju.mjuton.event.domain;
 
 import com.mju.mjuton.auth.domain.User;
+import com.mju.mjuton.eventapplication.domain.EventApplication;
 import com.mju.mjuton.profile.domain.Tag;
 import com.mju.mjuton.scrap.domain.EventScrap;
 import jakarta.persistence.CascadeType;
@@ -53,6 +54,8 @@ public class Event {
 	private List<EventTag> eventTags = new ArrayList<>();
 	@OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
 	private List<EventScrap> scraps = new ArrayList<>();
+	@OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+	private List<EventApplication> applications = new ArrayList<>();
 
 	protected Event() {}
 

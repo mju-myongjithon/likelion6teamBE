@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/events")
-@Tag(name = "해커톤·행사", description = "내부 신청 기능 없이 행사 정보를 등록·조회·수정·삭제합니다.")
+@Tag(name = "해커톤·행사", description = "행사 정보를 관리하고 CampusLink 내부 신청 일정 기록의 기준 정보를 제공합니다.")
 public class EventController {
 	private final EventService eventService;
 	private final GroupService groupService;
@@ -68,7 +68,7 @@ public class EventController {
 	}
 
 	@GetMapping("/{eventId}")
-	@Operation(summary = "행사 상세 조회", description = "행사 정보만 제공하며 내부 신청 기능은 제공하지 않습니다.")
+	@Operation(summary = "행사 상세 조회", description = "행사 정보와 외부 공식 링크를 조회합니다. 신청 기록은 별도 신청 일정 API를 사용합니다.")
 	@ApiResponse(responseCode = "404", description = "행사 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
 	EventDetail find(@PathVariable long eventId) {
 		return eventService.find(eventId);

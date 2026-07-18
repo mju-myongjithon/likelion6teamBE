@@ -2,6 +2,9 @@ package com.mju.mjuton.mypage.service;
 
 import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.global.ApiException;
+import com.mju.mjuton.event.domain.Event;
+import com.mju.mjuton.eventapplication.domain.EventApplication;
+import com.mju.mjuton.eventapplication.repository.EventApplicationRepository;
 import com.mju.mjuton.group.domain.GroupJoinApplicationStatus;
 import com.mju.mjuton.group.repository.GroupJoinApplicationRepository;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
@@ -26,13 +29,16 @@ public class MyPageService {
 	private final StudyGroupRepository groups;
 	private final GroupJoinApplicationRepository applications;
 	private final MeetupRepository meetups;
+	private final EventApplicationRepository eventApplications;
 
 	public MyPageService(UserRepository users, StudyGroupRepository groups,
-			GroupJoinApplicationRepository applications, MeetupRepository meetups) {
+			GroupJoinApplicationRepository applications, MeetupRepository meetups,
+			EventApplicationRepository eventApplications) {
 		this.users = users;
 		this.groups = groups;
 		this.applications = applications;
 		this.meetups = meetups;
+		this.eventApplications = eventApplications;
 	}
 
 	@Transactional(readOnly = true)
@@ -51,17 +57,43 @@ public class MyPageService {
 				.stream()
 				.map(Activity::from)
 				.toList();
-		return new MyPageSummary(participatedGroupCount, aiMatchSuccessRate, activities.size(), activities);
+		List<AppliedEvent> appliedEvents = eventApplications
+				.findByUser_IdOrderByEvent_StartsAtAscIdAsc(userId)
+				.stream()
+				.map(AppliedEvent::from)
+				.toList();
+		List<MyGroup> myGroups = groups.findMyGroups(userId).stream()
+				.map(group -> MyGroup.from(group, userId))
+				.toList();
+		return new MyPageSummary(participatedGroupCount, aiMatchSuccessRate, activities.size(), activities,
+				appliedEvents, myGroups);
 	}
 
 	public record MyPageSummary(long participatedGroupCount, int aiMatchSuccessRate,
-			int monthlyActivityCount, List<Activity> activities) {}
+			int monthlyActivityCount, List<Activity> activities, List<AppliedEvent> appliedEvents,
+			List<MyGroup> myGroups) {}
 
 	public record Activity(Long meetupId, Long groupId, String name, LocalDate date, LocalTime time,
 			MeetupStatus status) {
 		static Activity from(Meetup meetup) {
 			return new Activity(meetup.getId(), meetup.getGroupId(), meetup.getName(),
 					meetup.getMeetingDate(), meetup.getMeetingTime(), meetup.getStatus());
+		}
+	}
+
+	public record AppliedEvent(Long eventId, String title, String organizer, java.time.Instant startsAt,
+			java.time.Instant endsAt, String location, String relatedUrl, java.time.Instant appliedAt) {
+		static AppliedEvent from(EventApplication application) {
+			Event event = application.getEvent();
+			return new AppliedEvent(event.getId(), event.getTitle(), event.getOrganizer(), event.getStartsAt(),
+					event.getEndsAt(), event.getLocation(), event.getRelatedUrl(), application.getAppliedAt());
+		}
+	}
+
+	public record MyGroup(Long groupId, String title, String meetingRule, String location, boolean leader) {
+		static MyGroup from(com.mju.mjuton.group.domain.StudyGroup group, long userId) {
+			return new MyGroup(group.getId(), group.getTitle(), group.getMeetingRule(), group.getLocation(),
+					group.getLeaderUserId() == userId);
 		}
 	}
 }
