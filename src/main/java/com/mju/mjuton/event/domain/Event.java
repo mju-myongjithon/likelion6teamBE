@@ -45,6 +45,8 @@ public class Event {
 	private String location;
 	@Column(nullable = false, length = 2048)
 	private String relatedUrl;
+	@Column(length = 2048)
+	private String posterUrl;
 	@Column(nullable = false, updatable = false)
 	private Instant createdAt;
 	@Column(nullable = false)
@@ -61,15 +63,23 @@ public class Event {
 
 	public Event(User creator, String title, String description, String organizer,
 			Instant applicationDeadlineAt, Instant startsAt, Instant endsAt, String location, String relatedUrl) {
+		this(creator, title, description, organizer, applicationDeadlineAt, startsAt, endsAt, location, relatedUrl, null);
+	}
+
+	public Event(User creator, String title, String description, String organizer,
+			Instant applicationDeadlineAt, Instant startsAt, Instant endsAt, String location, String relatedUrl,
+			String posterUrl) {
 		this.creator = creator;
-		updateFields(title, description, organizer, applicationDeadlineAt, startsAt, endsAt, location, relatedUrl);
+		updateFields(title, description, organizer, applicationDeadlineAt, startsAt, endsAt, location, relatedUrl,
+				posterUrl);
 		this.createdAt = Instant.now();
 		this.updatedAt = this.createdAt;
 	}
 
 	public void update(String title, String description, String organizer, Instant applicationDeadlineAt,
-			Instant startsAt, Instant endsAt, String location, String relatedUrl, List<Tag> tags) {
-		updateFields(title, description, organizer, applicationDeadlineAt, startsAt, endsAt, location, relatedUrl);
+			Instant startsAt, Instant endsAt, String location, String relatedUrl, String posterUrl, List<Tag> tags) {
+		updateFields(title, description, organizer, applicationDeadlineAt, startsAt, endsAt, location, relatedUrl,
+				posterUrl);
 		replaceTags(tags);
 		this.updatedAt = Instant.now();
 	}
@@ -94,7 +104,7 @@ public class Event {
 	}
 
 	private void updateFields(String title, String description, String organizer, Instant applicationDeadlineAt,
-			Instant startsAt, Instant endsAt, String location, String relatedUrl) {
+			Instant startsAt, Instant endsAt, String location, String relatedUrl, String posterUrl) {
 		this.title = title;
 		this.description = description;
 		this.organizer = organizer;
@@ -103,6 +113,7 @@ public class Event {
 		this.endsAt = endsAt;
 		this.location = location;
 		this.relatedUrl = relatedUrl;
+		this.posterUrl = posterUrl;
 	}
 
 	public Long getId() { return id; }
@@ -116,6 +127,7 @@ public class Event {
 	public Instant getEndsAt() { return endsAt; }
 	public String getLocation() { return location; }
 	public String getRelatedUrl() { return relatedUrl; }
+	public String getPosterUrl() { return posterUrl; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }
 	public List<EventTag> getEventTags() { return List.copyOf(eventTags); }

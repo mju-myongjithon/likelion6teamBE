@@ -24,7 +24,7 @@ FROM users
 WHERE email = 'current-events@mju.ac.kr'
 ON CONFLICT (user_id) DO NOTHING;
 
-WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at, location, related_url) AS (
+WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at, location, related_url, poster_url) AS (
     VALUES
         (
             '2026 자율주행 해커톤 경진대회 (AMET)',
@@ -34,7 +34,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-08-24T15:00:00Z'::timestamptz,
             '2026-08-27T14:59:00Z'::timestamptz,
             '서울 코엑스 Hall B',
-            'https://www.kaami.or.kr/notice/event/read.jsp?no=43&reqPageNo=1'
+            'https://www.kaami.or.kr/notice/event/read.jsp?no=43&reqPageNo=1',
+            '/event-posters/amet-2026.webp'
         ),
         (
             '2026 스타트업 영그라운드 MVP 개발 해커톤',
@@ -44,7 +45,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-07-31T15:00:00Z'::timestamptz,
             '2026-08-20T14:59:00Z'::timestamptz,
             '온라인 협업 · 서울 둔촌1동 주민센터 대강당',
-            'https://www.blaybus.com/activities/928/landing'
+            'https://www.blaybus.com/activities/928/landing',
+            '/event-posters/startup-young-ground-2026.webp'
         ),
         (
             '제7회 국립재활원 보조기기 해커톤',
@@ -54,7 +56,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-08-07T15:00:00Z'::timestamptz,
             '2026-08-28T14:59:00Z'::timestamptz,
             '하이서울유스호스텔 쥬빌리홀 · 온라인 · 고려대학교 X-Garage',
-            'https://www.nrc.go.kr/nrc/board/boardView.do?bn=newsView&board_id=NRC_NOTICE_BOARD&fno=1&menu_cd=01_01&no=24068&pageIndex=1'
+            'https://www.nrc.go.kr/nrc/board/boardView.do?bn=newsView&board_id=NRC_NOTICE_BOARD&fno=1&menu_cd=01_01&no=24068&pageIndex=1',
+            '/event-posters/nrc-assistive-hackathon-2026.webp'
         ),
         (
             'NAN 2026: NHN Game × AI Hackathon',
@@ -64,7 +67,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-09-03T15:00:00Z'::timestamptz,
             '2026-09-06T14:59:00Z'::timestamptz,
             '경기 성남시 NHN 플레이뮤지엄',
-            'https://nan2026.nhn.com/'
+            'https://nan2026.nhn.com/',
+            '/event-posters/nan-2026.webp'
         ),
         (
             '2026 제5회 전국 SW 테스트 경진대회',
@@ -74,7 +78,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-08-23T15:00:00Z'::timestamptz,
             '2026-08-26T14:59:00Z'::timestamptz,
             '홀리데이인 광주호텔 3층 컨벤션홀',
-            'https://dip.or.kr/home/notice/businessbbs/boardRead.ubs?sfpsize=10&fboardcd=business&sfkind=&sfcategory=&sfstdt=&sfendt=&sfsearch=ftitle&sfkeyword=&fboardnum=9103&sfpage=1'
+            'https://dip.or.kr/home/notice/businessbbs/boardRead.ubs?sfpsize=10&fboardcd=business&sfkind=&sfcategory=&sfstdt=&sfendt=&sfsearch=ftitle&sfkeyword=&fboardnum=9103&sfpage=1',
+            '/event-posters/sw-test-contest-2026.webp'
         ),
         (
             '2026 ICEE 창의공학 캡스톤디자인 경진대회',
@@ -84,7 +89,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-09-17T15:00:00Z'::timestamptz,
             '2026-09-18T14:59:00Z'::timestamptz,
             '본선 장소 미공개(공식 공고 기준)',
-            'https://www.kangwon.ac.kr/ko/bbs/504/detail.do?pageIndex=1066&pageItm=10&pstSn=11135&searchGbn=0&searchOrderSort=0'
+            'https://www.kangwon.ac.kr/ko/bbs/504/detail.do?pageIndex=1066&pageItm=10&pstSn=11135&searchGbn=0&searchOrderSort=0',
+            '/event-posters/icee-capstone-2026.webp'
         ),
         (
             '2026 충북대학교 반도체 경진대회',
@@ -94,7 +100,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-09-12T00:30:00Z'::timestamptz,
             '2026-09-12T05:00:00Z'::timestamptz,
             '충북대학교 학연산공동기술연구원(E9동) 101호~205호',
-            'https://semicon.cbnu.ac.kr/notice/view/id/99'
+            'https://semicon.cbnu.ac.kr/notice/view/id/99',
+            '/event-posters/cbnu-semiconductor-2026.webp'
         ),
         (
             '제8회 Future Finance A.I. Challenge',
@@ -104,7 +111,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-09-01T15:00:00Z'::timestamptz,
             '2026-09-02T14:59:00Z'::timestamptz,
             '이화여자대학교 ECC 이삼봉홀',
-            'https://kb-aichallenge.com/'
+            'https://kb-aichallenge.com/',
+            '/event-posters/kb-ai-challenge-2026.webp'
         ),
         (
             '제10회 2026 미래에셋증권 AI Festival',
@@ -114,7 +122,8 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-09-30T15:00:00Z'::timestamptz,
             '2026-10-16T14:59:00Z'::timestamptz,
             '본선·멘토링 및 결선 장소 미공개(공식 페이지 기준)',
-            'https://miraeassetfesta.com/'
+            'https://miraeassetfesta.com/',
+            '/event-posters/miraeasset-ai-festival-2026.webp'
         ),
         (
             'NYPC 2026 Rookie Track',
@@ -124,17 +133,26 @@ WITH seed_events(title, description, organizer, deadline_at, starts_at, ends_at,
             '2026-08-28T15:00:00Z'::timestamptz,
             '2026-08-29T14:59:00Z'::timestamptz,
             '서울(오프라인 본선 세부 장소 추후 안내)',
-            'https://new.nypc.co.kr/ko/notice/5?page=1'
+            'https://new.nypc.co.kr/ko/notice/5?page=1',
+            '/event-posters/nypc-rookie-2026.webp'
         )
 )
-INSERT INTO events (creator_user_id, title, description, organizer, application_deadline_at, starts_at,
-                    ends_at, location, related_url, created_at, updated_at)
-SELECT u.user_id, s.title, s.description, s.organizer, s.deadline_at, s.starts_at,
-       s.ends_at, s.location, s.related_url, NOW(), NOW()
-FROM seed_events s
-CROSS JOIN users u
-WHERE u.email = 'current-events@mju.ac.kr'
-  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.related_url = s.related_url);
+MERGE INTO events e
+USING (
+    SELECT u.user_id, s.title, s.description, s.organizer, s.deadline_at, s.starts_at,
+           s.ends_at, s.location, s.related_url, s.poster_url
+    FROM seed_events s
+    CROSS JOIN users u
+    WHERE u.email = 'current-events@mju.ac.kr'
+) AS s
+ON e.related_url = s.related_url
+WHEN MATCHED AND e.poster_url IS DISTINCT FROM s.poster_url THEN
+    UPDATE SET poster_url = s.poster_url, updated_at = NOW()
+WHEN NOT MATCHED THEN
+    INSERT (creator_user_id, title, description, organizer, application_deadline_at, starts_at,
+            ends_at, location, related_url, poster_url, created_at, updated_at)
+    VALUES (s.user_id, s.title, s.description, s.organizer, s.deadline_at, s.starts_at,
+            s.ends_at, s.location, s.related_url, s.poster_url, NOW(), NOW());
 
 INSERT INTO tags (type, name)
 VALUES ('EVENT', '해커톤'), ('EVENT', '개발'), ('EVENT', '자율주행'), ('EVENT', 'MVP'),

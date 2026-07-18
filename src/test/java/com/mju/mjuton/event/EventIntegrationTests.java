@@ -48,6 +48,7 @@ class EventIntegrationTests {
 		long creatorId = (Long) creator.getAttribute(AuthController.SESSION_USER_ID);
 		long eventId = create(creator, request("  CampusLink 해커톤  ",
 				"2026-08-01T00:00:00Z", "2026-08-08T00:00:00Z", "2026-08-09T00:00:00Z",
+				"\"posterUrl\":\" /event-posters/test.webp \",",
 				"[\"  해커톤  \",\"개발\"]"));
 
 		mvc.perform(get("/api/events/{eventId}", eventId))
@@ -57,6 +58,7 @@ class EventIntegrationTests {
 				.andExpect(jsonPath("$.category").value("HACKATHON"))
 				.andExpect(jsonPath("$.organizer").value("CampusLink"))
 				.andExpect(jsonPath("$.relatedUrl").value("https://example.com/events/test"))
+				.andExpect(jsonPath("$.posterUrl").value("/event-posters/test.webp"))
 				.andExpect(jsonPath("$.tags[0]").value("해커톤"))
 				.andExpect(jsonPath("$.tags[1]").value("개발"))
 				.andExpect(jsonPath("$.members").doesNotExist())
@@ -83,7 +85,8 @@ class EventIntegrationTests {
 		long firstId = create(creator, request("첫 행사", "2026-08-01T00:00:00Z",
 				"2026-08-02T00:00:00Z", "2026-08-03T00:00:00Z", "[]"));
 		long secondId = create(creator, request("두 번째 행사", "2026-09-01T00:00:00Z",
-				"2026-09-02T00:00:00Z", "2026-09-03T00:00:00Z", "[]"));
+				"2026-09-02T00:00:00Z", "2026-09-03T00:00:00Z",
+				"\"posterUrl\":\"https://cdn.example.com/posters/list.jpg\",", "[]"));
 
 		mvc.perform(get("/api/events"))
 				.andExpect(status().isOk())
@@ -92,6 +95,7 @@ class EventIntegrationTests {
 				.andExpect(jsonPath("$[0].applicationDeadlineAt").exists())
 				.andExpect(jsonPath("$[0].startsAt").exists())
 				.andExpect(jsonPath("$[0].location").value("서울"))
+				.andExpect(jsonPath("$[0].posterUrl").value("https://cdn.example.com/posters/list.jpg"))
 				.andExpect(jsonPath("$[0].description").doesNotExist())
 				.andExpect(jsonPath("$[0].creatorUserId").doesNotExist())
 				.andExpect(jsonPath("$[0].tags").doesNotExist())
@@ -147,6 +151,20 @@ class EventIntegrationTests {
 		mvc.perform(post("/api/events").session(creator).contentType(MediaType.APPLICATION_JSON)
 				.content(validRequest().replace("https://example.com/events/test", "ftp://example.com/test")))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(post("/api/events").session(creator).contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest().replace("\"tags\":[]",
+						"\"posterUrl\":\"data:image/png;base64,test\",\"tags\":[]")))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		for (String invalidPosterUrl : new String[] {
+				"//cdn.example.com/poster.webp",
+				"/event-posters/../secret.webp",
+				"/event-posters/%2e%2e/secret.webp"
+		}) {
+			mvc.perform(post("/api/events").session(creator).contentType(MediaType.APPLICATION_JSON)
+					.content(validRequest().replace("\"tags\":[]",
+							"\"posterUrl\":\"" + invalidPosterUrl + "\",\"tags\":[]")))
+					.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		}
 		mvc.perform(post("/api/events").session(creator).contentType(MediaType.APPLICATION_JSON)
 				.content(request("중복", "2026-08-01T00:00:00Z", "2026-08-02T00:00:00Z",
 						"2026-08-03T00:00:00Z", "[\"AI\",\" AI \"]")))
@@ -205,10 +223,16 @@ class EventIntegrationTests {
 	}
 
 	private String request(String title, String deadline, String startsAt, String endsAt, String tags) {
+		return request(title, deadline, startsAt, endsAt, "", tags);
+	}
+
+	private String request(String title, String deadline, String startsAt, String endsAt, String optionalFields,
+			String tags) {
 		return "{\"title\":\"" + title + "\",\"description\":\"행사 정보입니다.\","
 				+ "\"organizer\":\"CampusLink\",\"applicationDeadlineAt\":\"" + deadline + "\","
 				+ "\"startsAt\":\"" + startsAt + "\",\"endsAt\":\"" + endsAt + "\","
-				+ "\"location\":\"서울\",\"relatedUrl\":\"https://example.com/events/test\",\"tags\":"
+				+ "\"location\":\"서울\",\"relatedUrl\":\"https://example.com/events/test\"," + optionalFields
+				+ "\"tags\":"
 				+ tags + "}";
 	}
 
