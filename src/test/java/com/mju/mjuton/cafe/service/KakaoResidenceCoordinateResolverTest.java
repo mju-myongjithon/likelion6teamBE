@@ -94,6 +94,28 @@ class KakaoResidenceCoordinateResolverTest {
 	}
 
 	@Test
+	void acceptsRenamedMetropolitanOfficeWithoutAcceptingAnotherGwangju() throws Exception {
+		KakaoResidenceCoordinateResolver resolver =
+				new KakaoResidenceCoordinateResolver(RestClient.create(), "");
+
+		var gwangju = resolver.coordinate(objectMapper.readTree("""
+				{"documents":[
+				  {"place_name":"광주시청","address_name":"경기 광주시 송정동","x":"127.2550","y":"37.4294"},
+				  {"place_name":"전남광주통합특별시청 광주청사","address_name":"전남광주통합특별시 서구 치평동 1200","x":"126.85162995901466","y":"35.16010195999625"}
+				]}
+				"""), "광주", "광주광역시청");
+
+		assertThat(gwangju).isPresent();
+		assertThat(gwangju.orElseThrow().latitude()).isEqualTo(35.16010195999625);
+		assertThat(gwangju.orElseThrow().longitude()).isEqualTo(126.85162995901466);
+		assertThat(resolver.coordinate(objectMapper.readTree("""
+				{"documents":[
+				  {"place_name":"전남광주통합특별시청 광주청사","address_name":"전남광주통합특별시 서구 치평동 1200","x":"126.85162995901466","y":"35.16010195999625"}
+				]}
+				"""), "광주광역시", "광주광역시청")).isPresent();
+	}
+
+	@Test
 	void matchesCountyOfficeCandidate() throws Exception {
 		KakaoResidenceCoordinateResolver resolver =
 				new KakaoResidenceCoordinateResolver(RestClient.create(), "");
