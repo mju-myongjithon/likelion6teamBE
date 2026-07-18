@@ -7,13 +7,19 @@ WHERE event_id IN (
     JOIN users u ON u.user_id = e.creator_user_id
     WHERE u.email = 'mock-events@mju.ac.kr'
       AND u.password_hash = '$2y$10$Ek05oDdKjm8vX6ezSk5DYu9tptDOOW.iWmixTxGeILpbFIxHIE352'
-      AND e.related_url LIKE 'https://example.com/mjuton/mock-events/%'
+      AND (
+          e.related_url LIKE 'https://example.com/mjuton/mock-events/%'
+          OR e.related_url LIKE 'https://campuslink.example/events/%'
+      )
 );
 
 DELETE FROM events
 WHERE creator_user_id = (SELECT user_id FROM users WHERE email = 'mock-events@mju.ac.kr'
   AND password_hash = '$2y$10$Ek05oDdKjm8vX6ezSk5DYu9tptDOOW.iWmixTxGeILpbFIxHIE352')
-  AND related_url LIKE 'https://example.com/mjuton/mock-events/%';
+  AND (
+      related_url LIKE 'https://example.com/mjuton/mock-events/%'
+      OR related_url LIKE 'https://campuslink.example/events/%'
+  );
 
 -- Shared tags are intentionally retained because their rows may predate this seed.
 
