@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/mypage")
-@Tag(name = "마이페이지", description = "현재 사용자의 참여 통계와 월별 약속을 조회합니다.")
+@Tag(name = "마이페이지", description = "현재 사용자의 참여 통계, 월별 약속, 신청 행사와 내 모임을 조회합니다.")
 @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE)
 public class MyPageController {
 	private final MyPageService myPageService;
@@ -30,7 +30,7 @@ public class MyPageController {
 	}
 
 	@GetMapping
-	@Operation(summary = "마이페이지 통계 및 월별 활동 조회")
+	@Operation(summary = "마이페이지 통계, 월별 활동, 신청 행사 및 내 모임 조회")
 	MyPageSummary find(@RequestParam int year, @RequestParam int month, HttpServletRequest request) {
 		try {
 			return myPageService.find(sessionUserId(request), YearMonth.of(year, month));
