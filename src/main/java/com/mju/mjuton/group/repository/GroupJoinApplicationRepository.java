@@ -5,6 +5,7 @@ import com.mju.mjuton.group.domain.GroupJoinApplicationStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -36,6 +37,8 @@ public interface GroupJoinApplicationRepository extends JpaRepository<GroupJoinA
 			@Param("applicantId") Long applicantId,
 			@Param("status") GroupJoinApplicationStatus status,
 			@Param("groupIds") List<Long> groupIds);
+
+	long countByApplicant_IdAndStatusIn(Long applicantId, Set<GroupJoinApplicationStatus> statuses);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select application from GroupJoinApplication application where application.id = :id")
