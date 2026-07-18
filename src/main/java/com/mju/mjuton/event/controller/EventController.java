@@ -136,12 +136,14 @@ public class EventController {
 					requiredMode = Schema.RequiredMode.REQUIRED) String location,
 			@Schema(example = "https://example.com/events/campuslink-2026", minLength = 1, maxLength = 2048,
 					requiredMode = Schema.RequiredMode.REQUIRED) String relatedUrl,
+			@Schema(description = "행사 카드 배경에 사용할 포스터 이미지 URL", example = "https://example.com/posters/campuslink-2026.jpg",
+					maxLength = 2048, nullable = true) String posterUrl,
 			@ArraySchema(arraySchema = @Schema(description = "행사 분류 태그", requiredMode = Schema.RequiredMode.REQUIRED),
 					schema = @Schema(type = "string", minLength = 1, maxLength = 50), maxItems = 20, uniqueItems = true)
 			@NotNull(message = "행사 태그 배열은 필수입니다.") List<String> tags) {
 		EventService.EventValues toValues() {
 			return new EventService.EventValues(title, description, organizer, applicationDeadlineAt, startsAt,
-					endsAt, location, relatedUrl, tags);
+					endsAt, location, relatedUrl, posterUrl, tags);
 		}
 	}
 }

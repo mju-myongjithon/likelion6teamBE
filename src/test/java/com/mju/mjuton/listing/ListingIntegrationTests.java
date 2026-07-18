@@ -65,6 +65,7 @@ class ListingIntegrationTests {
 				.andExpect(jsonPath("$[0].organizer").doesNotExist())
 				.andExpect(jsonPath("$[0].endsAt").doesNotExist())
 				.andExpect(jsonPath("$[0].relatedUrl").doesNotExist())
+				.andExpect(jsonPath("$[0].posterUrl").value("https://cdn.example.com/posters/listing.jpg"))
 				.andExpect(jsonPath("$[0].tags").doesNotExist())
 				.andExpect(jsonPath("$[0].currentMemberCount").doesNotExist())
 				.andExpect(jsonPath("$[0].matchPercentage").doesNotExist())
@@ -148,7 +149,8 @@ class ListingIntegrationTests {
 		String body = "{\"title\":\"" + title + "\",\"description\":\"행사 소개\","
 				+ "\"organizer\":\"CampusLink\",\"applicationDeadlineAt\":\"2026-08-01T00:00:00Z\","
 				+ "\"startsAt\":\"2026-08-02T00:00:00Z\",\"endsAt\":\"2026-08-03T00:00:00Z\","
-				+ "\"location\":\"서울\",\"relatedUrl\":\"https://example.com/listing-test\",\"tags\":[]}";
+				+ "\"location\":\"서울\",\"relatedUrl\":\"https://example.com/listing-test\","
+				+ "\"posterUrl\":\"https://cdn.example.com/posters/listing.jpg\",\"tags\":[]}";
 		MvcResult result = mvc.perform(post("/api/events").session(session).contentType(MediaType.APPLICATION_JSON)
 				.content(body)).andExpect(status().isCreated()).andReturn();
 		return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.eventId")).longValue();
