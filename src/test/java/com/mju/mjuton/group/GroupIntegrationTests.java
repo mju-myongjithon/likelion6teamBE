@@ -107,7 +107,7 @@ class GroupIntegrationTests {
 	}
 
 	@Test
-	void validatesFieldsRolesAndNormalizedCaseSensitiveDuplicates() throws Exception {
+	void validatesFieldsAndNormalizesDuplicateRoles() throws Exception {
 		MockHttpSession leader = sessionFor("group-validation@mju.ac.kr");
 		mvc.perform(post("/api/groups").session(leader).contentType(MediaType.APPLICATION_JSON)
 				.content(request("   ", 1, "[]")))
@@ -116,9 +116,12 @@ class GroupIntegrationTests {
 				.content(request("정원 오류", 101, "[]")))
 				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 		mvc.perform(post("/api/groups").session(leader).contentType(MediaType.APPLICATION_JSON)
-				.content(request("중복 오류", 5,
+				.content(request("중복 정규화", 5,
 						"[{\"role\":\"개발\",\"skill\":\"Java\"},{\"role\":\" 개발 \",\"skill\":\" Java \"}]")))
-				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.recruitingRoles.length()").value(1))
+				.andExpect(jsonPath("$.recruitingRoles[0].role").value("개발"))
+				.andExpect(jsonPath("$.recruitingRoles[0].skill").value("Java"));
 		mvc.perform(post("/api/groups").session(leader).contentType(MediaType.APPLICATION_JSON)
 				.content(request("대소문자 허용", 5,
 						"[{\"role\":\"개발\",\"skill\":\"Java\"},{\"role\":\"개발\",\"skill\":\"java\"}]")))

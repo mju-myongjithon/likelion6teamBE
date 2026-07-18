@@ -170,8 +170,7 @@ public class GroupService {
 			if (value == null) throw invalidRequest("모집 역할은 null일 수 없습니다.");
 			RoleValues role = new RoleValues(required(value.role(), "모집 역할", 50),
 					optional(value.skill(), "모집 기술", 100));
-			if (!unique.add(role)) throw invalidRequest("동일한 모집 역할과 기술을 중복해 입력할 수 없습니다.");
-			normalized.add(role);
+			if (unique.add(role)) normalized.add(role);
 		}
 		return normalized;
 	}
