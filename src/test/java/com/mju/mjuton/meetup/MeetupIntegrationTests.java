@@ -12,12 +12,15 @@ import com.mju.mjuton.auth.domain.User;
 import com.mju.mjuton.auth.repository.UserRepository;
 import com.mju.mjuton.cafe.service.CafeSearchClient;
 import com.mju.mjuton.cafe.service.CafeSearchClient.CafeCandidate;
+import com.mju.mjuton.cafe.service.ResidenceCoordinateResolver;
+import com.mju.mjuton.cafe.service.ResidenceCoordinateResolver.Coordinate;
 import com.mju.mjuton.group.domain.GroupMember;
 import com.mju.mjuton.group.domain.StudyGroup;
 import com.mju.mjuton.group.repository.GroupMemberRepository;
 import com.mju.mjuton.group.repository.StudyGroupRepository;
 import com.mju.mjuton.profile.service.ProfileService;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,7 +53,7 @@ class MeetupIntegrationTests {
 		User leader = user("meetup-leader");
 		User member = user("meetup-member");
 		createProfile(leader, "리더", 37.2210, 127.1860);
-		createProfile(member, "멤버", 37.2250, 127.1910);
+		createProfileWithoutCoordinates(member, "멤버", "서울특별시 강남구");
 		long groupId = createGroup(leader, member);
 
 		MvcResult created = mvc.perform(post("/api/groups/{groupId}/meetups", groupId)
@@ -154,6 +157,11 @@ class MeetupIntegrationTests {
 				List.of("백엔드"), List.of(), List.of()));
 	}
 
+	private void createProfileWithoutCoordinates(User user, String name, String residenceArea) {
+		profiles.createForSignup(user, new ProfileService.ProfileValues(name, "명지대학교", "컴퓨터공학과",
+				residenceArea, null, null, null, null, List.of("백엔드"), List.of(), List.of()));
+	}
+
 	private MockHttpSession sessionFor(User user) {
 		MockHttpSession session = new MockHttpSession();
 		session.setAttribute(AuthController.SESSION_USER_ID, user.getId());
@@ -173,7 +181,13 @@ class MeetupIntegrationTests {
 			return (latitude, longitude) -> List.of(
 					new CafeCandidate("중앙 카페", 37.2230, 127.1888, "명지대 앞", "031-000-0001", null, "확인 필요"),
 					new CafeCandidate("두 번째 카페", 37.2240, 127.1895, "명지대 근처", "031-000-0002", null, "확인 필요"),
-					new CafeCandidate("세 번째 카페", 37.2250, 127.1910, "명지대 사거리", "031-000-0003", null, "확인 필요"));
+						new CafeCandidate("세 번째 카페", 37.2250, 127.1910, "명지대 사거리", "031-000-0003", null, "확인 필요"));
+		}
+
+		@Bean
+		@Primary
+		ResidenceCoordinateResolver residenceCoordinateResolver() {
+			return residenceArea -> Optional.of(new Coordinate(37.5172, 127.0473));
 		}
 	}
 }

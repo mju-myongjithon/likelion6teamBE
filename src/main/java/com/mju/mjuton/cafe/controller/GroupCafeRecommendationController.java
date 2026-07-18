@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/groups/{groupId}/cafes")
-@Tag(name = "카페 추천", description = "모임 멤버의 거주 지역 좌표를 기반으로 가까운 카페를 최대 3개 추천합니다.")
+@Tag(name = "카페 추천", description = "모임 멤버의 거주 지역 대표 좌표를 기반으로 가까운 카페를 최대 3개 추천합니다.")
 @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE)
 public class GroupCafeRecommendationController {
 	private final GroupCafeRecommendationService groupCafeRecommendationService;
@@ -35,11 +35,11 @@ public class GroupCafeRecommendationController {
 
 	@PostMapping("/recommendations")
 	@Operation(summary = "모임 멤버 기반 공동 카페 추천",
-			description = "프론트는 groupId만 전달하고, 백엔드는 모임 멤버들의 프로필 거주 지역 좌표를 조회해 직선거리 기준 상위 3개 카페를 추천합니다.")
+			description = "프론트는 groupId만 전달합니다. 백엔드는 프로필 좌표를 사용하고, 좌표가 없으면 저장된 시·군·구의 시청·군청·구청을 대표 위치로 사용해 직선거리 기준 상위 3개 카페를 추천합니다.")
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "카페 추천 성공",
 					content = @Content(schema = @Schema(implementation = CafeRecommendationResponse.class))),
-			@ApiResponse(responseCode = "400", description = "멤버 위치 좌표 부족 또는 외부 검색 결과 없음",
+			@ApiResponse(responseCode = "400", description = "멤버 위치를 좌표나 거주 지역으로 확인할 수 없거나 외부 검색 결과가 없음",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
 			@ApiResponse(responseCode = "401", description = "로그인 필요",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
