@@ -155,11 +155,24 @@ public class GroupMembershipService {
 	public List<MemberResponse> members(long groupId, long requesterUserId) {
 		StudyGroup group = findGroup(groupId);
 		requireMember(group, requesterUserId);
-		List<MemberResponse> responses = new ArrayList<>(members.findByGroup_IdOrderByJoinedAtAscIdAsc(groupId).stream()
-				.map(member -> MemberResponse.from(member, group.getLeaderUserId()))
+		List<GroupMember> found = members.findByGroup_IdOrderByJoinedAtAscIdAsc(groupId);
+		boolean missingLeaderRow = found.stream()
+				.noneMatch(member -> member.getUserId() == group.getLeaderUserId());
+		List<Long> userIds = new ArrayList<>(found.stream().map(GroupMember::getUserId).toList());
+		if (missingLeaderRow) {
+			userIds.add(group.getLeaderUserId());
+		}
+		Map<Long, Profile> profileByUserId = profiles.findAllById(userIds).stream()
+				.collect(Collectors.toMap(Profile::getUserId, Function.identity()));
+		List<MemberResponse> responses = new ArrayList<>(found.stream()
+				.map(member -> MemberResponse.from(member, group.getLeaderUserId(),
+						profileByUserId.get(member.getUserId())))
 				.toList());
-		if (responses.stream().noneMatch(member -> member.userId() == group.getLeaderUserId())) {
-			responses.add(0, new MemberResponse(group.getLeaderUserId(), GroupMemberRole.LEADER, group.getCreatedAt()));
+		if (missingLeaderRow) {
+			Profile leaderProfile = profileByUserId.get(group.getLeaderUserId());
+			responses.add(0, new MemberResponse(group.getLeaderUserId(),
+					leaderProfile == null ? null : leaderProfile.getName(),
+					GroupMemberRole.LEADER, group.getCreatedAt()));
 		}
 		return List.copyOf(responses);
 	}
@@ -362,11 +375,15 @@ public class GroupMembershipService {
 		}
 	}
 
-	public record MemberResponse(Long userId, GroupMemberRole role, Instant joinedAt) {
-		static MemberResponse from(GroupMember member, long leaderUserId) {
+	public record MemberResponse(Long userId,
+			@Schema(nullable = true, description = "멤버 프로필 이름. 프로필이 없으면 null")
+			String name,
+			GroupMemberRole role, Instant joinedAt) {
+		static MemberResponse from(GroupMember member, long leaderUserId, Profile profile) {
 			GroupMemberRole role = member.getUserId() == leaderUserId
 					? GroupMemberRole.LEADER : GroupMemberRole.MEMBER;
-			return new MemberResponse(member.getUserId(), role, member.getJoinedAt());
+			return new MemberResponse(member.getUserId(), profile == null ? null : profile.getName(),
+					role, member.getJoinedAt());
 		}
 	}
 }
