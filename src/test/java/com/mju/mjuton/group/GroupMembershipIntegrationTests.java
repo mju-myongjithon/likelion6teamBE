@@ -62,12 +62,15 @@ class GroupMembershipIntegrationTests {
 		MockHttpSession outsider = sessionFor("membership-outsider@mju.ac.kr");
 		long leaderId = userId(leader);
 		long applicantId = userId(applicant);
+		saveProfile(leader, "모임 리더", null);
+		saveProfile(applicant, "승인된 멤버", null);
 		long groupId = create(leader, 3);
 		assertCurrentMemberCount(groupId, 1);
 
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(leader))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].userId").value(leaderId))
+				.andExpect(jsonPath("$[0].name").value("모임 리더"))
 				.andExpect(jsonPath("$[0].role").value("LEADER"));
 
 		long applicationId = apply(groupId, applicant);
@@ -94,7 +97,9 @@ class GroupMembershipIntegrationTests {
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(applicant))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].role").value("LEADER"))
+				.andExpect(jsonPath("$[0].name").value("모임 리더"))
 				.andExpect(jsonPath("$[1].userId").value(applicantId))
+				.andExpect(jsonPath("$[1].name").value("승인된 멤버"))
 				.andExpect(jsonPath("$[1].role").value("MEMBER"));
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(outsider))
 				.andExpect(status().isForbidden())
@@ -274,6 +279,7 @@ class GroupMembershipIntegrationTests {
 		MockHttpSession leader = sessionFor("legacy-leader@mju.ac.kr");
 		MockHttpSession applicant = sessionFor("legacy-applicant@mju.ac.kr");
 		User leaderUser = users.findById(userId(leader)).orElseThrow();
+		saveProfile(leader, "레거시 리더", null);
 		StudyGroup group = new StudyGroup(leaderUser, "기존 모임", "기존 데이터", 2, "매주", "서울");
 		group.replaceRoles(List.of());
 		long groupId = groups.saveAndFlush(group).getId();
@@ -282,6 +288,7 @@ class GroupMembershipIntegrationTests {
 		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(leader))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].userId").value(userId(leader)))
+				.andExpect(jsonPath("$[0].name").value("레거시 리더"))
 				.andExpect(jsonPath("$[0].role").value("LEADER"));
 		approve(groupId, apply(groupId, applicant), leader);
 		assertThat(members.countByGroup_Id(groupId)).isEqualTo(1);
@@ -292,6 +299,18 @@ class GroupMembershipIntegrationTests {
 						.content("{\"newLeaderUserId\":" + userId(applicant) + "}"))
 				.andExpect(status().isNoContent());
 		assertThat(members.countByGroup_Id(groupId)).isEqualTo(2);
+	}
+
+	@Test
+	void memberWithoutProfileHasNullName() throws Exception {
+		MockHttpSession leader = sessionFor("profileless-member-leader@mju.ac.kr");
+		long groupId = create(leader, 2);
+
+		mvc.perform(get("/api/groups/{groupId}/members", groupId).session(leader))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].userId").value(userId(leader)))
+				.andExpect(jsonPath("$[0].name").isEmpty())
+				.andExpect(jsonPath("$[0].role").value("LEADER"));
 	}
 
 	@Test
