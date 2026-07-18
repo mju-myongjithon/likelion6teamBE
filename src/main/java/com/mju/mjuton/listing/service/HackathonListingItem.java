@@ -12,9 +12,10 @@ public record HackathonListingItem(
 		Instant applicationDeadlineAt,
 		Instant startsAt,
 		String location,
+		String posterUrl,
 		Instant createdAt) implements ListingItem {
 	static HackathonListingItem from(EventSummary event) {
 		return new HackathonListingItem("HACKATHON", event.eventId(), event.title(), event.applicationDeadlineAt(),
-				event.startsAt(), event.location(), event.createdAt());
+				event.startsAt(), event.location(), event.posterUrl(), event.createdAt());
 	}
 }

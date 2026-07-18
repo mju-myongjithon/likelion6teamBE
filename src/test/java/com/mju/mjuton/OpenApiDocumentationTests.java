@@ -1,6 +1,8 @@
 package com.mju.mjuton;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -238,6 +240,11 @@ class OpenApiDocumentationTests {
 				.andExpect(jsonPath("$.components.schemas.EventRequest.required",
 						hasItems("title", "description", "organizer", "applicationDeadlineAt", "startsAt", "endsAt",
 								"location", "relatedUrl", "tags")))
+				.andExpect(jsonPath("$.components.schemas.EventRequest.required",
+						not(hasItem("posterUrl"))))
+				.andExpect(jsonPath("$.components.schemas.EventRequest.properties.posterUrl.type",
+						hasItems("string", "null")))
+				.andExpect(jsonPath("$.components.schemas.EventRequest.properties.posterUrl.maxLength").value(2048))
 				.andExpect(jsonPath("$.components.schemas.EventRequest.properties.tags.maxItems").value(20))
 				.andExpect(jsonPath("$.components.schemas.EventRequest.properties.tags.uniqueItems").value(true));
 	}

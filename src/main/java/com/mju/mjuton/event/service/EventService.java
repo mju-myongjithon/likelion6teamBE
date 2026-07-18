@@ -11,6 +11,8 @@ import com.mju.mjuton.profile.domain.Tag;
 import com.mju.mjuton.profile.domain.TagType;
 import com.mju.mjuton.profile.repository.TagRepository;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -46,7 +48,7 @@ public class EventService {
 		NormalizedValues normalized = normalize(values);
 		Event event = new Event(creator, normalized.title(), normalized.description(), normalized.organizer(),
 				normalized.applicationDeadlineAt(), normalized.startsAt(), normalized.endsAt(), normalized.location(),
-				normalized.relatedUrl());
+				normalized.relatedUrl(), normalized.posterUrl());
 		event.replaceTags(resolveTags(normalized.tags()));
 		return EventDetail.from(events.saveAndFlush(event));
 	}
@@ -72,7 +74,7 @@ public class EventService {
 		NormalizedValues normalized = normalize(values);
 		event.update(normalized.title(), normalized.description(), normalized.organizer(),
 				normalized.applicationDeadlineAt(), normalized.startsAt(), normalized.endsAt(), normalized.location(),
-				normalized.relatedUrl(), resolveTags(normalized.tags()));
+				normalized.relatedUrl(), normalized.posterUrl(), resolveTags(normalized.tags()));
 		return EventDetail.from(events.saveAndFlush(event));
 	}
 
@@ -112,8 +114,9 @@ public class EventService {
 		}
 		String location = required(values.location(), "행사 장소", 200);
 		String relatedUrl = url(values.relatedUrl());
+		String posterUrl = optionalUrl(values.posterUrl(), "포스터 이미지 URL");
 		return new NormalizedValues(title, description, organizer, deadline, startsAt, endsAt, location,
-				relatedUrl, tagNames(values.tags()));
+				relatedUrl, posterUrl, tagNames(values.tags()));
 	}
 
 	private String required(String value, String field, int maxLength) {
@@ -132,13 +135,44 @@ public class EventService {
 
 	private String url(String value) {
 		String normalized = required(value, "관련 링크", 2048);
+		return absoluteHttpUrl(normalized, "관련 링크");
+	}
+
+	private String optionalUrl(String value, String field) {
+		if (value == null || value.isBlank()) return null;
+		String normalized = value.trim();
+		if (normalized.length() > 2048) throw invalidRequest(field + "은(는) 최대 2048자여야 합니다.");
+		if (normalized.startsWith("/")) return sameOriginPath(normalized, field);
+		return absoluteHttpUrl(normalized, field);
+	}
+
+	private String sameOriginPath(String value, String field) {
+		try {
+			URI uri = URI.create(value);
+			if (value.startsWith("//") || uri.getRawAuthority() != null || uri.getRawPath() == null) {
+				throw invalidRequest(field + "은(는) 단일 슬래시로 시작하는 same-origin 경로여야 합니다.");
+			}
+			String decodedPath = URLDecoder.decode(uri.getRawPath(), StandardCharsets.UTF_8)
+					.replace('\\', '/');
+			for (String segment : decodedPath.split("/")) {
+				if ("..".equals(segment)) {
+					throw invalidRequest(field + "에 상위 경로 이동을 포함할 수 없습니다.");
+				}
+			}
+			return value;
+		} catch (IllegalArgumentException exception) {
+			throw invalidRequest(field + "은(는) 유효한 same-origin 경로여야 합니다.");
+		}
+	}
+
+	private String absoluteHttpUrl(String normalized, String field) {
 		try {
 			URI uri = URI.create(normalized);
 			if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-					|| uri.getHost() == null) throw invalidRequest("관련 링크는 절대형 HTTP 또는 HTTPS URL이어야 합니다.");
+					|| uri.getHost() == null) throw invalidRequest(field + "은(는) 절대형 HTTP 또는 HTTPS URL이어야 합니다.");
 			return normalized;
 		} catch (IllegalArgumentException exception) {
-			throw invalidRequest("관련 링크는 절대형 HTTP 또는 HTTPS URL이어야 합니다.");
+			throw invalidRequest(field + "은(는) 절대형 HTTP 또는 HTTPS URL이어야 합니다.");
 		}
 	}
 
@@ -173,27 +207,35 @@ public class EventService {
 	}
 
 	public record EventValues(String title, String description, String organizer, Instant applicationDeadlineAt,
-			Instant startsAt, Instant endsAt, String location, String relatedUrl, List<String> tags) {}
+			Instant startsAt, Instant endsAt, String location, String relatedUrl, String posterUrl, List<String> tags) {
+		public EventValues(String title, String description, String organizer, Instant applicationDeadlineAt,
+				Instant startsAt, Instant endsAt, String location, String relatedUrl, List<String> tags) {
+			this(title, description, organizer, applicationDeadlineAt, startsAt, endsAt, location, relatedUrl, null,
+					tags);
+		}
+	}
 
 	private record NormalizedValues(String title, String description, String organizer,
 			Instant applicationDeadlineAt, Instant startsAt, Instant endsAt, String location, String relatedUrl,
-			List<String> tags) {}
+			String posterUrl, List<String> tags) {}
 
 	public record EventSummary(Long eventId, String title, EventCategory category, Instant applicationDeadlineAt,
-			Instant startsAt, String location, Instant createdAt) {
+			Instant startsAt, String location, String posterUrl, Instant createdAt) {
 		static EventSummary from(Event event) {
 			return new EventSummary(event.getId(), event.getTitle(), event.getCategory(),
-					event.getApplicationDeadlineAt(), event.getStartsAt(), event.getLocation(), event.getCreatedAt());
+					event.getApplicationDeadlineAt(), event.getStartsAt(), event.getLocation(), event.getPosterUrl(),
+					event.getCreatedAt());
 		}
 	}
 
 	public record EventDetail(Long eventId, Long creatorUserId, String title, EventCategory category,
 			String description, String organizer, Instant applicationDeadlineAt, Instant startsAt, Instant endsAt,
-			String location, String relatedUrl, List<String> tags, Instant createdAt, Instant updatedAt) {
+			String location, String relatedUrl, String posterUrl, List<String> tags, Instant createdAt,
+			Instant updatedAt) {
 		static EventDetail from(Event event) {
 			return new EventDetail(event.getId(), event.getCreatorUserId(), event.getTitle(), event.getCategory(),
 					event.getDescription(), event.getOrganizer(), event.getApplicationDeadlineAt(), event.getStartsAt(),
-					event.getEndsAt(), event.getLocation(), event.getRelatedUrl(),
+					event.getEndsAt(), event.getLocation(), event.getRelatedUrl(), event.getPosterUrl(),
 					event.getEventTags().stream().map(tag -> tag.getName()).toList(), event.getCreatedAt(),
 					event.getUpdatedAt());
 		}

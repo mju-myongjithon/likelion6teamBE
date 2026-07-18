@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE events
+    ADD COLUMN IF NOT EXISTS poster_url VARCHAR(2048);
+
+COMMIT;
