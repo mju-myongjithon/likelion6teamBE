@@ -60,6 +60,9 @@ class KakaoResidenceCoordinateResolverTest {
 		assertThat(resolver.officeQuery("경기도 수원시")).isEqualTo("경기도 수원시청");
 		assertThat(resolver.officeQuery("서울특별시 강남구")).isEqualTo("서울특별시 강남구청");
 		assertThat(resolver.officeQuery("강원특별자치도 양양군")).isEqualTo("강원특별자치도 양양군청");
+		assertThat(resolver.officeQuery("용인시 처인구 역북동 587-1")).isEqualTo("용인시 처인구청");
+		assertThat(resolver.officeQuery("경기도 용인시 처인구 역북동 587-1"))
+				.isEqualTo("경기도 용인시 처인구청");
 	}
 
 	@Test
@@ -127,6 +130,22 @@ class KakaoResidenceCoordinateResolverTest {
 				"""), "강원특별자치도 양양군", "양양군청");
 
 		assertThat(coordinate).isPresent();
+	}
+
+	@Test
+	void matchesDistrictOfficeForDetailedAddressWithoutProvince() throws Exception {
+		KakaoResidenceCoordinateResolver resolver =
+				new KakaoResidenceCoordinateResolver(RestClient.create(), "");
+
+		var coordinate = resolver.coordinate(objectMapper.readTree("""
+				{"documents":[
+				  {"place_name":"처인구청","address_name":"경기 용인시 처인구 김량장동 286","x":"127.201357139726","y":"37.2343060386946"}
+				]}
+				"""), "용인시 처인구 역북동 587-1", "처인구청");
+
+		assertThat(coordinate).isPresent();
+		assertThat(coordinate.orElseThrow().latitude()).isEqualTo(37.2343060386946);
+		assertThat(coordinate.orElseThrow().longitude()).isEqualTo(127.201357139726);
 	}
 
 	@Test

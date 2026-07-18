@@ -77,12 +77,20 @@ class KakaoResidenceCoordinateResolver implements ResidenceCoordinateResolver {
 	}
 
 	String officeQuery(String residenceArea) {
-		String lastToken = lastToken(residenceArea);
-		if (lastToken.endsWith("구") || lastToken.endsWith("군") || lastToken.endsWith("시")
-				|| lastToken.endsWith("도")) {
-			return residenceArea + "청";
+		List<String> areaTokens = List.of(residenceArea.split(" "));
+		int officeAreaIndex = -1;
+		for (int index = 0; index < areaTokens.size(); index++) {
+			if (isAdministrativeOfficeArea(areaTokens.get(index))) officeAreaIndex = index;
+		}
+		if (officeAreaIndex >= 0) {
+			return String.join(" ", areaTokens.subList(0, officeAreaIndex + 1)) + "청";
 		}
 		return CITY_HALL_NAMES.getOrDefault(residenceArea, residenceArea + " 시청");
+	}
+
+	private boolean isAdministrativeOfficeArea(String token) {
+		return token.endsWith("구") || token.endsWith("군")
+				|| token.endsWith("시") || token.endsWith("도");
 	}
 
 	Optional<Coordinate> coordinate(JsonNode response, String residenceArea, String expectedOfficeName) {
@@ -121,11 +129,14 @@ class KakaoResidenceCoordinateResolver implements ResidenceCoordinateResolver {
 				|| isUpperAdministrativeArea(firstAreaToken);
 		if (!hasUpperArea) return true;
 		if (address == null) return false;
-		String firstAddressToken = address.trim().split("\\s+")[0];
-		String firstAddressStem = administrativeStem(firstAddressToken);
 		String firstAreaStem = administrativeStem(firstAreaToken);
-		return firstAddressStem.equals(firstAreaStem)
-				|| metropolitanStem(residenceArea) != null && firstAddressStem.contains(firstAreaStem);
+		List<String> addressTokens = List.of(address.trim().split("\\s+"));
+		if (metropolitanStem(residenceArea) != null) {
+			return administrativeStem(addressTokens.get(0)).contains(firstAreaStem);
+		}
+		return addressTokens.stream()
+				.map(this::administrativeStem)
+				.anyMatch(firstAreaStem::equals);
 	}
 
 	private String metropolitanStem(String residenceArea) {
