@@ -93,7 +93,7 @@ class KakaoResidenceCoordinateResolver implements ResidenceCoordinateResolver {
 			String address = text(document, "address_name", text(document, "road_address_name"));
 			Double latitude = number(document, "y");
 			Double longitude = number(document, "x");
-			if (!matchesOffice(placeName, expectedOfficeName)
+			if (!matchesOffice(placeName, expectedOfficeName, residenceArea)
 					|| !matchesUpperArea(address, residenceArea)
 					|| !valid(latitude, longitude)) {
 				continue;
@@ -103,8 +103,14 @@ class KakaoResidenceCoordinateResolver implements ResidenceCoordinateResolver {
 		return Optional.empty();
 	}
 
-	private boolean matchesOffice(String placeName, String expectedOfficeName) {
-		return placeName != null && compact(placeName).contains(compact(expectedOfficeName));
+	private boolean matchesOffice(String placeName, String expectedOfficeName, String residenceArea) {
+		if (placeName == null) return false;
+		String compactPlaceName = compact(placeName);
+		if (compactPlaceName.contains(compact(expectedOfficeName))) return true;
+		String metropolitanStem = metropolitanStem(residenceArea);
+		return metropolitanStem != null
+				&& compactPlaceName.contains(compact(metropolitanStem))
+				&& compactPlaceName.contains("시청");
 	}
 
 	private boolean matchesUpperArea(String address, String residenceArea) {
@@ -116,7 +122,20 @@ class KakaoResidenceCoordinateResolver implements ResidenceCoordinateResolver {
 		if (!hasUpperArea) return true;
 		if (address == null) return false;
 		String firstAddressToken = address.trim().split("\\s+")[0];
-		return administrativeStem(firstAddressToken).equals(administrativeStem(firstAreaToken));
+		String firstAddressStem = administrativeStem(firstAddressToken);
+		String firstAreaStem = administrativeStem(firstAreaToken);
+		return firstAddressStem.equals(firstAreaStem)
+				|| metropolitanStem(residenceArea) != null && firstAddressStem.contains(firstAreaStem);
+	}
+
+	private String metropolitanStem(String residenceArea) {
+		if (CITY_HALL_NAMES.containsKey(residenceArea)) return residenceArea;
+		if (residenceArea.contains(" ")) return null;
+		if (residenceArea.endsWith("특별자치시") || residenceArea.endsWith("특별시")
+				|| residenceArea.endsWith("광역시")) {
+			return administrativeStem(residenceArea);
+		}
+		return null;
 	}
 
 	private boolean isUpperAdministrativeArea(String value) {
